@@ -68,3 +68,7 @@ This repository is public and must keep all sensitive data out of commits, logs,
 ## Public repository note
 
 This repository must never contain secrets, real target URLs, test account data, or captured artifacts.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
