@@ -18,6 +18,8 @@ export const TASK_KINDS = [
   "write-report",
   "review-screenshots",
   "run-generated-test",
+  /** A configurable agent task (`@hugents/runtime`). Params carry the agent id, exact version and input hash only. */
+  "run-agent",
 ] as const;
 export type TaskKind = (typeof TASK_KINDS)[number];
 
