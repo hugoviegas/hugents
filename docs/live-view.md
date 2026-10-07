@@ -47,7 +47,7 @@ blacked out before navigation starts.
 
 ## Wiring in `duel-agent-office`
 
-Opt-in and local. With `OFFICE_LIVE_ENABLED=true` and `OFFICE_LIVE_VIEWER_TOKEN` (16+ characters, set for both `office:bridge` and the dashboard process), `office:bridge` hosts
+Opt-in and local. With `OFFICE_LIVE_ENABLED=true` and `OFFICE_LIVE_VIEWER_TOKEN` (16+ characters). `npm run office:start` forwards the `OFFICE_LIVE_*` keys from `.env` to both the bridge and the office page (shell values win); the office page reads nothing else from `.env`. If you start `office:bridge` and the dashboard separately, export both variables for both, `office:bridge` hosts
 the relay on `OFFICE_LIVE_PORT` (default 3101) and hands the runner a random worker token and the loopback URL through
 its environment (`QA_LIVE_RELAY_URL`, `QA_LIVE_WORKER_TOKEN`). The runner (`src/cli.ts`) calls `startLiveView` after
 both players open:
