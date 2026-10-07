@@ -240,8 +240,8 @@ async function setupTask(agentId: OfficeTask["agentId"], inference: Inference, t
 }
 
 describe("agent tasks", () => {
-  // design-critic has its own tests below: without a vision model it never calls a model.
-  it.each(OFFICE_AGENT_IDS.filter((id) => id !== "design-critic"))("%s claims a task, runs its tools and reports back", async (agentId) => {
+  // design-critic has its own tests below (without a vision model it never calls a model); test-planner reads code, see officeMvp.test.ts.
+  it.each(OFFICE_AGENT_IDS.filter((id) => id !== "design-critic" && id !== "test-planner"))("%s claims a task, runs its tools and reports back", async (agentId) => {
     const { inference } = fakeInference("## Verdict\nAll good");
     const { deps, task, events } = await setupTask(agentId, inference);
     const outcome = await runTask(deps, task);

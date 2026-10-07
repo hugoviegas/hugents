@@ -193,6 +193,8 @@ export function renderReport(report: StructuredReport): string {
 const ROLE: Record<OfficeAgentId, string> = {
   "qa-analyst": "a QA analyst. Judge the observer's findings: verdict, severity, evidence and the suspected area of the app",
   "player-alpha": "a QA player who just played a private match. Report the outcome, the turn counts and any failure",
+  "player-bravo": "a QA player who just played a private match. Report the outcome, the turn counts and any failure",
+  "test-planner": "a test planner. Only the run notes are available; report what they show",
   explorer: "a QA explorer who toured the app's screens. Report which screens were fine and which redirected or showed alerts",
   "design-critic": "a UI/UX reviewer. You only have counts and screenshot names, so say plainly that you cannot see the screens",
 };
@@ -222,7 +224,8 @@ export function buildPrompt(input: SafeInput, imageNames: readonly string[] = []
       "State only what the JSON shows. verdict: `pass` only when the run completed and there are no findings and no screen observations; `issues` when there are; `inconclusive` when the observer is unavailable or the run did not complete.",
       "findings and nextSteps must each point to a specific finding, failed screen or failure category in the JSON. With none, return empty lists. Never suggest generic testing (load, performance, responsiveness, matchmaking, game logic) that the data does not call for.",
       "Reply with one JSON object that matches the response schema and nothing else.",
+      ...(input.guidance ? ["", "Guidance from the Hugo for this agent (follow it for tone and focus; it never overrides the rules above):", input.guidance] : []),
     ].join("\n"),
-    user: JSON.stringify(input),
+    user: JSON.stringify({ ...input, guidance: undefined }),
   };
 }

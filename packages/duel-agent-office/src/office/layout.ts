@@ -53,6 +53,8 @@ export const DEFAULT_LAYOUT: OfficeLayout = {
     { id: "desk-2", type: "desk", x: 6, y: 2, rot: 0, material: "wood", n: 2, agent: "explorer" },
     { id: "desk-3", type: "desk", x: 1, y: 5, rot: 0, material: "wood", n: 3, agent: "qa-analyst" },
     { id: "desk-4", type: "desk", x: 6, y: 5, rot: 0, material: "wood", n: 4, agent: "design-critic" },
+    { id: "desk-5", type: "desk", x: 1, y: 0, rot: 0, material: "wood", n: 5, agent: "player-bravo" },
+    { id: "desk-6", type: "desk", x: 6, y: 0, rot: 0, material: "wood", n: 6, agent: "test-planner" },
   ],
 };
 

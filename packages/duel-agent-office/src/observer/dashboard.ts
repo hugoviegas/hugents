@@ -10,6 +10,12 @@ import type { AgentName } from "../orchestrator/eventBus.js";
 import type { FindingsReport } from "./schema.js";
 import type { OfficeHub, OfficeView } from "../office/hub.js";
 import { DEFAULT_LAYOUT, type LayoutStore, type OfficeLayout } from "../office/layout.js";
+import { AGENT_COMMANDS, DEFAULT_CONFIGS, EXPLORE_SCREEN_NAMES, type AgentConfigStore, type AgentConfigs } from "../office/agentConfig.js";
+import type { Connections, ConnectionStore } from "../office/connections.js";
+import { OFFICE_AGENT_IDS } from "../office/contract.js";
+import type { DayUsage, QuotaStore } from "../office/quota.js";
+import { listReports, readReport, REPORT_SEVERITIES, type ReportEntry } from "../office/reports.js";
+import { createRepoReader, RepoError, type GithubOptions } from "../office/repoSource.js";
 
 /** What the browser receives. Built field by field from sanitized data: never raw JSON, paths or URLs. */
 export interface DashboardState {
@@ -20,6 +26,14 @@ export interface DashboardState {
   office: OfficeView | null;
   /** Where the props stand and which agent uses which desk (visual only). */
   layout: OfficeLayout;
+  /** Editable settings per agent, today's usage against their quota, the commands each agent understands and the screens the explorer may be limited to. */
+  settings: {
+    configs: AgentConfigs;
+    usage: Record<string, DayUsage>;
+    commands: typeof AGENT_COMMANDS;
+    screens: readonly string[];
+    connections: Connections;
+  };
   totals: FindingsReport["totals"];
   repeated: FindingsReport["repeated"];
   runs: {
@@ -37,14 +51,16 @@ export interface DashboardState {
 }
 
 /**
- * The four office agents (bridge ids) in roster order. `look` picks the identity colour and the character sprite;
+ * The office agents (bridge ids) in roster order. `look` picks the identity colour and the character sprite;
  * which desk an agent uses comes from the layout.
  */
 const ROSTER = [
-  { id: "player-alpha", name: "Player Alpha", role: "Plays the private match against Player Bravo", look: 1 },
+  { id: "player-alpha", name: "Player Alpha", role: "Hosts the private match and plays it as Alpha", look: 1 },
+  { id: "player-bravo", name: "Player Bravo", role: "Joins the private match and plays it as Bravo", look: 5 },
   { id: "explorer", name: "Explorer", role: "Walks the screens and captures them", look: 2 },
   { id: "qa-analyst", name: "QA Analyst", role: "Reads run artifacts and writes findings", look: 3 },
   { id: "design-critic", name: "Design Critic", role: "Checks the UI against the design system", look: 4 },
+  { id: "test-planner", name: "Test Planner", role: "Reads the game's code and plans the test setup", look: 6 },
 ] as const;
 
 /** Office data as the page gets it: every free-text field sanitized again, report paths reduced to their file name. */
@@ -71,6 +87,7 @@ export function buildDashboardState(
   now: Date,
   office: OfficeView | null = null,
   layout: OfficeLayout = DEFAULT_LAYOUT,
+  settings: DashboardState["settings"] = { configs: DEFAULT_CONFIGS, usage: {}, commands: AGENT_COMMANDS, screens: EXPLORE_SCREEN_NAMES, connections: { sources: [] } },
 ): DashboardState {
   const report = buildReport(
     scanned.map((s) => s.report),
@@ -84,6 +101,7 @@ export function buildDashboardState(
     agents: ROSTER,
     office: office ? sanitizeOfficeView(office) : null,
     layout,
+    settings,
     totals: report.totals,
     repeated: report.repeated.map((r) => ({ ...r, message: sanitizeText(r.message) })),
     // Newest first.
@@ -169,21 +187,59 @@ function sameOrigin(req: IncomingMessage): boolean {
 }
 
 /** Creates (does not start) the dashboard server. Starting is an explicit act of `startDashboard`. */
-export function createDashboardServer(config: ObserverConfig, now: () => Date = () => new Date(), office?: OfficeHub, layout?: LayoutStore): Server {
+export interface OfficeStores {
+  configs?: AgentConfigStore;
+  quota?: QuotaStore;
+  connections?: ConnectionStore;
+  /** Read-only GitHub access (token from the process environment, optional). */
+  github?: GithubOptions;
+}
+
+const REPORT_LIMIT = 200;
+const query = (url: URL, key: string) => (url.searchParams.get(key) ?? "").slice(0, 80) || undefined;
+const day = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+
+/** Report entries for the page: free text sanitized again, nothing that is not a plain field. */
+function reportRow(e: ReportEntry): ReportEntry {
+  return { ...e, title: sanitizeText(e.title, 120), ...(e.taskTitle ? { taskTitle: sanitizeText(e.taskTitle, 200) } : {}), ...(e.objective ? { objective: sanitizeText(e.objective, 300) } : {}), ...(e.runId ? { runId: RUN_NAME.test(e.runId) ? e.runId : "run" } : {}) };
+}
+
+export function createDashboardServer(config: ObserverConfig, now: () => Date = () => new Date(), office?: OfficeHub, layout?: LayoutStore, stores: OfficeStores = {}): Server {
   let port = config.port;
+  const settings = async (): Promise<DashboardState["settings"]> => ({
+    configs: stores.configs ? await stores.configs.all() : DEFAULT_CONFIGS,
+    usage: stores.quota ? await stores.quota.today() : {},
+    commands: AGENT_COMMANDS,
+    screens: EXPLORE_SCREEN_NAMES,
+    connections: stores.connections ? await stores.connections.get() : { sources: [] },
+  });
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
-      const postHandler =
-        url.pathname === "/api/tasks" && office
-          ? async (input: unknown) => {
-              const result = await office.assign(input);
-              const task = result.body.task;
-              return { status: result.status, body: task ? { task: sanitizeOfficeView({ connected: true, readonly: false, agents: [], tasks: [task], events: [] }).tasks[0] } : result.body };
+      const taskHandler = async (input: unknown) => {
+        const body = (input && typeof input === "object" ? input : {}) as { agentId?: unknown; title?: unknown; command?: unknown };
+        const agentId = (OFFICE_AGENT_IDS as readonly unknown[]).includes(body.agentId) ? (body.agentId as (typeof OFFICE_AGENT_IDS)[number]) : undefined;
+        // A command with no text runs the agent's configured objective.
+        const blank = typeof body.title !== "string" || !body.title.trim();
+        const title = blank && agentId && stores.configs ? (await stores.configs.get(agentId)).objective : body.title;
+        const result = await (office as OfficeHub).assign({ ...body, title });
+        const task = result.body.task;
+        return { status: result.status, body: task ? { task: sanitizeOfficeView({ connected: true, readonly: false, agents: [], tasks: [task], events: [], staleRunners: 0 }).tasks[0] } : result.body };
+      };
+      const postHandlers: Record<string, ((input: unknown) => Promise<{ status: number; body: unknown }> | { status: number; body: unknown }) | undefined> = {
+        "/api/tasks": office ? taskHandler : undefined,
+        "/api/layout": layout ? (input) => layout.save(input) : undefined,
+        "/api/agent-config": stores.configs
+          ? (input) => {
+              const body = (input && typeof input === "object" ? input : {}) as { agentId?: unknown; config?: unknown };
+              return (stores.configs as AgentConfigStore).save(body.agentId, body.config);
             }
-          : url.pathname === "/api/layout" && layout
-            ? (input: unknown) => layout.save(input)
-            : undefined;
+          : undefined,
+        "/api/stop": office ? (input) => (office as OfficeHub).stop((input as { agentId?: unknown } | null)?.agentId) : undefined,
+        "/api/cleanup": office ? () => (office as OfficeHub).cleanup() : undefined,
+        "/api/connections": stores.connections ? (input) => (stores.connections as ConnectionStore).save(input) : undefined,
+      };
+      const postHandler = postHandlers[url.pathname];
       if (req.method === "POST" && postHandler) {
         if (!hostAllowed(req, port) || !sameOrigin(req)) return send(res, 403, "text/plain", "Forbidden");
         if (!(req.headers["content-type"] ?? "").startsWith("application/json")) return send(res, 415, "text/plain", "application/json required");
@@ -208,7 +264,35 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
         const scanned = await scanArtifactRoot(config, when);
         const officeView = office ? await office.view() : null;
         const currentLayout = layout ? await layout.get() : DEFAULT_LAYOUT;
-        return send(res, 200, "application/json; charset=utf-8", JSON.stringify(buildDashboardState(scanned, config, when, officeView, currentLayout)));
+        return send(res, 200, "application/json; charset=utf-8", JSON.stringify(buildDashboardState(scanned, config, when, officeView, currentLayout, await settings())));
+      }
+      if (url.pathname === "/api/reports") {
+        const severity = query(url, "severity");
+        const rows = await listReports(config.artifactsDir, {
+          agent: query(url, "agent"),
+          severity: severity && (REPORT_SEVERITIES as readonly string[]).includes(severity) ? severity : undefined,
+          task: query(url, "task"),
+          from: day(query(url, "from")),
+          to: day(query(url, "to")),
+        });
+        return send(res, 200, "application/json; charset=utf-8", JSON.stringify({ total: rows.length, reports: rows.slice(0, REPORT_LIMIT).map(reportRow) }));
+      }
+      if (url.pathname === "/api/report") {
+        const text = await readReport(config.artifactsDir, url.searchParams.get("file") ?? "");
+        if (text === undefined) return send(res, 404, "application/json; charset=utf-8", JSON.stringify({ error: "No such report" }));
+        // Line by line, so the Markdown keeps its shape while URLs, e-mails and ids are masked once more.
+        return send(res, 200, "application/json; charset=utf-8", JSON.stringify({ text: text.split("\n").map((l) => sanitizeText(l, 600)).join("\n") }));
+      }
+      if (url.pathname === "/api/github") {
+        // Read-only: a summary of one configured source. The source comes from the saved list, never from the request.
+        const all = stores.connections ? await stores.connections.get() : { sources: [] };
+        const source = all.sources.find((x) => x.id === url.searchParams.get("source"));
+        if (!source) return send(res, 404, "application/json; charset=utf-8", JSON.stringify({ error: "Unknown source" }));
+        try {
+          return send(res, 200, "application/json; charset=utf-8", JSON.stringify(await createRepoReader(source, stores.github).summary()));
+        } catch (error) {
+          return send(res, 502, "application/json; charset=utf-8", JSON.stringify({ error: error instanceof RepoError ? error.message : "The source could not be read" }));
+        }
       }
       const shot = /^\/shot\/([^/]+)\/(\d{1,3})$/.exec(url.pathname);
       if (shot && RUN_NAME.test(shot[1] as string)) {
@@ -230,8 +314,8 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
 }
 
 /** Explicit start. Binds to the configured loopback host only. */
-export async function startDashboard(config: ObserverConfig, office?: OfficeHub, layout?: LayoutStore): Promise<{ server: Server; port: number }> {
-  const server = createDashboardServer(config, undefined, office, layout);
+export async function startDashboard(config: ObserverConfig, office?: OfficeHub, layout?: LayoutStore, stores?: OfficeStores): Promise<{ server: Server; port: number }> {
+  const server = createDashboardServer(config, undefined, office, layout, stores);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(config.port, config.host, resolve);
