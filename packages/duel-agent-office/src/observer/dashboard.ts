@@ -12,6 +12,8 @@ import type { FindingsReport } from "./schema.js";
 /** What the browser receives. Built field by field from sanitized data: never raw JSON, paths or URLs. */
 export interface DashboardState {
   generatedAt: string;
+  /** Who sits at which desk of the office view. Static structure, sent with the data so the page hardcodes no agents. */
+  agents: typeof ROSTER;
   totals: FindingsReport["totals"];
   repeated: FindingsReport["repeated"];
   runs: {
@@ -22,11 +24,21 @@ export interface DashboardState {
     finishedAt?: string;
     durationMs?: number;
     ignoredNetworkFailures: number;
-    players: { player: string; status: string; activity: string }[];
+    players: { player: string; status: string; activity: string; at?: string }[];
     findings: { severity: string; ruleId: string; category: string; player: string; count: number; message: string; evidence: { file: string; line?: number }[] }[];
     screenshots: { url: string; player: string; label: string }[];
   }[];
 }
+
+/** The runner's agents (by observer player label) plus the observer's own desk, in roster order. */
+const ROSTER = [
+  { id: "alpha", name: "Player Alpha", role: "Creates the private room and plays", desk: 1 },
+  { id: "bravo", name: "Player Bravo", role: "Joins the room and plays", desk: 2 },
+  { id: "runner", name: "Runner", role: "Opens both browsers and drives the scenario", desk: 4 },
+  { id: "report", name: "QA Observer", role: "Reads run artifacts and writes findings", desk: 3 },
+] as const;
+
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/;
 
 export function buildDashboardState(scanned: readonly ScannedRun[], config: ObserverConfig, now: Date): DashboardState {
   const report = buildReport(
@@ -38,6 +50,7 @@ export function buildDashboardState(scanned: readonly ScannedRun[], config: Obse
   const byId = new Map(scanned.map((s) => [s.report.runId, s]));
   return {
     generatedAt: report.generatedAt,
+    agents: ROSTER,
     totals: report.totals,
     repeated: report.repeated.map((r) => ({ ...r, message: sanitizeText(r.message) })),
     // Newest first.
@@ -55,6 +68,8 @@ export function buildDashboardState(scanned: readonly ScannedRun[], config: Obse
           player: playerLabel(e.agent as AgentName),
           status: e.status,
           activity: sanitizeText(e.activity, 160),
+          // Only a plain ISO timestamp passes; anything else is dropped rather than shown.
+          ...(ISO_TIME.test(e.at) ? { at: e.at } : {}),
         })),
         findings: run.findings.map((f) => ({
           severity: f.severity,

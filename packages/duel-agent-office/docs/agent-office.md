@@ -16,6 +16,8 @@ Four QA agents (`player-alpha`, `explorer`, `qa-analyst`, `design-critic`) on a 
 
 Everything Big Bang Duel specific (agents, tools, contract, metrics) lives in `src/office/` and does not import AgentOffice. AgentOffice is only the UI and room server, patched by `office/agentoffice-qa.patch`.
 
+**Look.** The patch dresses the AgentOffice HUD in the Agent Office design system: `office/theme/agent-office.css` (design tokens for four themes plus HUD classes) is generated from `src/theme/` by `npm run office:theme` and copied into the vendored UI by `npm run office:setup`; the patch links it, restyles the brand box, the floating panels and the task board (state badges with icon and word, no emoji) and takes the scene background from the `bg` token. Other upstream panels keep their own styles. After pulling a new patch, delete `vendor/agent-office` and rerun `npm run office:setup`, since the setup only applies the patch to a clean checkout.
+
 ## Run it
 
 ```bash

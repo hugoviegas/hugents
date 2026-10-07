@@ -300,8 +300,28 @@ index b01d46e..c881092 100644
      }
  
      onLeave(client: Client, consented: boolean) {
+diff --git a/packages/ui/index.html b/packages/ui/index.html
+index 5df9b88..9432849 100644
+--- a/packages/ui/index.html
++++ b/packages/ui/index.html
+@@ -1,11 +1,12 @@
+ <!DOCTYPE html>
+-<html lang="en">
++<html lang="en" data-theme="workshop">
+   <head>
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>AgentOffice</title>
++    <title>Agent Office</title>
++    <link rel="stylesheet" href="/agent-office.css" />
+     <style>
+-      body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; color: #fff; font-family: 'Inter', sans-serif; }
++      body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg, #1A1410); color: var(--text-primary, #F6ECDD); font: var(--type-body, 15px/22px system-ui, sans-serif); }
+       #phaser-container { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; }
+       #ui-root { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 2; pointer-events: none; }
+       /* Allow clicks to pass through empty UI space to Phaser */
 diff --git a/packages/ui/src/App.tsx b/packages/ui/src/App.tsx
-index 90dc888..3b7eca4 100644
+index 90dc888..3018f7b 100644
 --- a/packages/ui/src/App.tsx
 +++ b/packages/ui/src/App.tsx
 @@ -1,7 +1,6 @@
@@ -312,7 +332,17 @@ index 90dc888..3b7eca4 100644
  import { LayoutEditor } from './components/LayoutEditor';
  import { SystemLog } from './components/SystemLog';
  import { ViralControlPanel } from './components/ViralControlPanel';
-@@ -19,7 +18,6 @@ export function App() {
+@@ -13,13 +12,13 @@ import { EpisodeRecapPanel } from './components/EpisodeRecapPanel';
+ export function App() {
+     return (
+         <>
+-            <div style={{ position: 'absolute', bottom: 20, left: 20, color: 'white', backgroundColor: 'rgba(10,10,30,0.85)', padding: '12px 16px', borderRadius: '10px', zIndex: 10, border: '1px solid rgba(108,92,231,0.3)' }}>
+-                <h1 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: 8 }}>🏢 AgentOffice</h1>
+-                <p style={{ margin: '4px 0 0', opacity: 0.6, fontSize: '11px' }}>Real-time multi-agent AI simulation</p>
++            <div className="ao-brand">
++                <span className="ao-eyebrow">Big Bang Duel</span>
++                <h1 className="ao-title">Agent Office</h1>
++                <span className="ao-caption">Desks lit by real work.</span>
              </div>
              <ChatPanel />
              <TaskBoard />
@@ -320,8 +350,83 @@ index 90dc888..3b7eca4 100644
              <LayoutEditor />
              <SystemLog />
              <ViralControlPanel />
+diff --git a/packages/ui/src/components/FloatingPanel.tsx b/packages/ui/src/components/FloatingPanel.tsx
+index cd208bb..1ecb286 100644
+--- a/packages/ui/src/components/FloatingPanel.tsx
++++ b/packages/ui/src/components/FloatingPanel.tsx
+@@ -98,21 +98,9 @@ export function FloatingPanel({
+     }, [dragOffset, width]);
+ 
+     return (
+-        <div style={{
+-            position: 'absolute',
+-            left: position.x,
+-            top: position.y,
+-            width,
+-            zIndex,
+-            borderRadius: 12,
+-            overflow: 'hidden',
+-            border: '1px solid rgba(255,255,255,0.2)',
+-            backgroundColor: 'rgba(7, 10, 20, 0.86)',
+-            color: '#f4f8ff',
+-            boxShadow: '0 10px 26px rgba(0,0,0,0.42)',
+-            backdropFilter: 'blur(6px)'
+-        }}>
++        <div className="ao-panel" style={{ left: position.x, top: position.y, width, zIndex }}>
+             <div
++                className={minimized ? 'ao-panel-head is-min' : 'ao-panel-head'}
+                 onMouseDown={(event) => {
+                     const target = event.target as HTMLElement;
+                     if (target.closest('button') || target.closest('input') || target.closest('select')) {
+@@ -123,31 +111,17 @@ export function FloatingPanel({
+                         dy: event.clientY - position.y
+                     });
+                 }}
+-                style={{
+-                    cursor: 'grab',
+-                    padding: '9px 10px',
+-                    display: 'flex',
+-                    alignItems: 'center',
+-                    justifyContent: 'space-between',
+-                    borderBottom: minimized ? 'none' : '1px solid rgba(255,255,255,0.1)',
+-                    background: 'linear-gradient(90deg, rgba(28,33,71,0.8), rgba(72,31,51,0.65))'
+-                }}
+             >
+                 <div>
+-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{title}</div>
+-                    {subtitle && <div style={{ fontSize: 10, opacity: 0.75 }}>{subtitle}</div>}
++                    <h2 className="ao-panel-title">{title}</h2>
++                    {subtitle && <div className="ao-panel-sub">{subtitle}</div>}
+                 </div>
+                 <button
++                    type="button"
++                    className="ao-btn ao-icon-btn"
+                     onClick={() => setMinimized((value) => !value)}
+-                    style={{
+-                        border: '1px solid rgba(255,255,255,0.2)',
+-                        borderRadius: 6,
+-                        width: 24,
+-                        height: 22,
+-                        cursor: 'pointer',
+-                        color: '#f4f8ff',
+-                        background: 'rgba(255,255,255,0.08)'
+-                    }}
++                    aria-label={minimized ? `Expand ${title}` : `Minimize ${title}`}
++                    aria-expanded={!minimized}
+                     title={minimized ? 'Expand panel' : 'Minimize panel'}
+                 >
+                     {minimized ? '+' : '-'}
+@@ -155,7 +129,7 @@ export function FloatingPanel({
+             </div>
+ 
+             {!minimized && (
+-                <div style={{ padding: 10 }}>
++                <div className="ao-panel-body">
+                     {children}
+                 </div>
+             )}
 diff --git a/packages/ui/src/components/TaskBoard.tsx b/packages/ui/src/components/TaskBoard.tsx
-index e2b862c..4ce75e5 100644
+index e2b862c..916ec43 100644
 --- a/packages/ui/src/components/TaskBoard.tsx
 +++ b/packages/ui/src/components/TaskBoard.tsx
 @@ -11,7 +11,9 @@ interface TaskItem {
@@ -344,7 +449,7 @@ index e2b862c..4ce75e5 100644
                  room.onMessage('tasks-sync', (serverTasks: any[]) => {
                      setTasks(serverTasks.map(t => ({
                          id: t.id,
-@@ -45,7 +49,7 @@ export function TaskBoard() {
+@@ -45,101 +49,79 @@ export function TaskBoard() {
          if (!newTask.trim()) return;
          const room = getColyseusRoom();
          if (room) {
@@ -353,75 +458,158 @@ index e2b862c..4ce75e5 100644
              setNewTask('');
          }
      };
-@@ -53,12 +57,14 @@ export function TaskBoard() {
-     const statusColor = (s: string) => {
-         if (s === 'completed') return '#00b894';
-         if (s === 'in_progress') return '#fdcb6e';
-+        if (s === 'blocked') return '#d63031';
-         return '#dfe6e9';
+ 
+-    const statusColor = (s: string) => {
+-        if (s === 'completed') return '#00b894';
+-        if (s === 'in_progress') return '#fdcb6e';
+-        return '#dfe6e9';
++    // Agent Office state badges: icon plus word, colors from the theme tokens (office/theme/agent-office.css).
++    const BADGES: Record<string, { cls: string; word: string; icon: string }> = {
++        pending: { cls: 's-queued', word: 'Queued', icon: 'M0 0h5v1h-5zM4 1h1v1h-1zM3 2h1v1h-1zM2 3h1v1h-1zM1 4h1v1h-1zM0 5h5v1h-5z' },
++        in_progress: { cls: 's-working', word: 'Working', icon: 'M0 0h1v1h-1zM2 0h3v1h-3zM6 0h1v1h-1zM1 1h5v1h-5zM0 2h3v1h-3zM4 2h3v1h-3zM0 3h2v1h-2zM5 3h2v1h-2zM0 4h3v1h-3zM4 4h3v1h-3zM1 5h5v1h-5zM0 6h1v1h-1zM2 6h3v1h-3zM6 6h1v1h-1z' },
++        completed: { cls: 's-completed', word: 'Completed', icon: 'M6 1h1v1h-1zM5 2h2v1h-2zM0 3h1v1h-1zM4 3h2v1h-2zM0 4h2v1h-2zM3 4h2v1h-2zM1 5h3v1h-3zM2 6h1v1h-1z' },
++        blocked: { cls: 's-blocked', word: 'Blocked', icon: 'M2 0h3v1h-3zM1 1h1v1h-1zM5 1h1v1h-1zM1 2h1v1h-1zM5 2h1v1h-1zM0 3h7v1h-7zM0 4h3v1h-3zM4 4h3v1h-3zM0 5h3v1h-3zM4 5h3v1h-3zM0 6h7v1h-7z' },
      };
  
-     const statusIcon = (s: string) => {
-         if (s === 'completed') return '✅';
-         if (s === 'in_progress') return '🔄';
-+        if (s === 'blocked') return '⛔';
-         return '⏳';
+-    const statusIcon = (s: string) => {
+-        if (s === 'completed') return '✅';
+-        if (s === 'in_progress') return '🔄';
+-        return '⏳';
++    const statusBadge = (s: string) => {
++        const b = BADGES[s] ?? BADGES.pending;
++        return (
++            <span className={`ao-badge ${b.cls}`}>
++                <svg width="12" height="12" viewBox="0 0 7 7" fill="currentColor" shapeRendering="crispEdges" aria-hidden="true"><path d={b.icon} /></svg>
++                {b.word}
++            </span>
++        );
      };
  
-@@ -77,7 +83,7 @@ export function TaskBoard() {
-             </h3>
+     return (
+-        <div style={{
+-            position: 'absolute', left: 20, top: 20, width: 280,
+-            backgroundColor: 'rgba(10,10,30,0.92)', color: 'white',
+-            padding: 16, borderRadius: 12,
+-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+-            backdropFilter: 'blur(8px)',
+-            border: '1px solid rgba(108,92,231,0.3)',
+-            maxHeight: '50vh', display: 'flex', flexDirection: 'column'
+-        }}>
+-            <h3 style={{ margin: '0 0 10px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: 6 }}>
+-                📋 Task Board
+-            </h3>
++        <section className="ao-panel ao-taskboard" aria-labelledby="ao-taskboard-title">
++            <h2 id="ao-taskboard-title" className="ao-panel-title">Task board</h2>
  
-             {/* Task Assignment Form */}
+-            {/* Task Assignment Form */}
 -            <form onSubmit={handleSubmit} style={{ marginBottom: 10 }}>
-+            {!readonly && <form onSubmit={handleSubmit} style={{ marginBottom: 10 }}>
++            {!readonly && <form className="ao-form" onSubmit={handleSubmit}>
++                <label className="ao-eyebrow" htmlFor="ao-task-title">New task</label>
                  <input
++                    id="ao-task-title"
++                    className="ao-field"
                      type="text"
                      value={newTask}
-@@ -100,9 +106,10 @@ export function TaskBoard() {
-                             color: '#aaa', fontSize: '11px'
-                         }}
+                     onChange={(e) => setNewTask(e.target.value)}
+-                    placeholder="Assign a task..."
+-                    style={{
+-                        width: '100%', padding: '8px 10px', borderRadius: 6,
+-                        border: '1px solid #444', backgroundColor: '#1a1a3e',
+-                        color: 'white', fontSize: '12px', outline: 'none',
+-                        boxSizing: 'border-box', marginBottom: 6
+-                    }}
++                    placeholder="Explorer: test Missions screen"
+                 />
+-                <div style={{ display: 'flex', gap: 6 }}>
++                <div className="ao-row">
+                     <select
++                        className="ao-field"
++                        aria-label="Agent"
+                         value={targetAgent}
+                         onChange={(e) => setTargetAgent(e.target.value)}
+-                        style={{
+-                            flex: 1, padding: '6px', borderRadius: 6,
+-                            border: '1px solid #444', backgroundColor: '#1a1a3e',
+-                            color: '#aaa', fontSize: '11px'
+-                        }}
                      >
 -                        <option value="auto">🤖 Auto-assign</option>
 -                        <option value="alice">Alice (Engineer)</option>
 -                        <option value="bob">Bob (PM)</option>
-+                        <option value="player-alpha">Alpha (QA Player)</option>
-+                        <option value="explorer">Explorer (QA Explorer)</option>
-+                        <option value="qa-analyst">Analyst (QA Analyst)</option>
-+                        <option value="design-critic">Critic (Design Critic)</option>
++                        <option value="player-alpha">Player Alpha (QA player)</option>
++                        <option value="explorer">Explorer (QA explorer)</option>
++                        <option value="qa-analyst">QA Analyst</option>
++                        <option value="design-critic">Design Critic</option>
                      </select>
-                     <button type="submit" style={{
-                         padding: '6px 14px', borderRadius: 6, border: 'none',
-@@ -112,7 +119,7 @@ export function TaskBoard() {
-                         Assign
-                     </button>
+-                    <button type="submit" style={{
+-                        padding: '6px 14px', borderRadius: 6, border: 'none',
+-                        backgroundColor: '#6c5ce7', color: 'white', fontSize: '11px',
+-                        cursor: 'pointer', fontWeight: 'bold'
+-                    }}>
+-                        Assign
+-                    </button>
++                    <button type="submit" className="ao-btn ao-btn-primary">Assign</button>
                  </div>
 -            </form>
 +            </form>}
  
-             {/* Task List */}
-             <div style={{ flex: 1, overflowY: 'auto', fontSize: '12px' }}>
-@@ -137,8 +144,15 @@ export function TaskBoard() {
+-            {/* Task List */}
+-            <div style={{ flex: 1, overflowY: 'auto', fontSize: '12px' }}>
++            <ul className="ao-tasks">
+                 {tasks.length === 0 && (
+-                    <p style={{ color: '#666', fontStyle: 'italic', margin: 0, fontSize: '11px' }}>
+-                        No tasks yet. Type above to assign work to agents!
+-                    </p>
++                    <li><p className="ao-empty">No tasks yet. Assign one above and the agent takes its desk.</p></li>
+                 )}
+                 {tasks.map(task => (
+-                    <div key={task.id} style={{
+-                        padding: '6px 8px', marginBottom: 4, borderRadius: 6,
+-                        backgroundColor: 'rgba(255,255,255,0.05)',
+-                        borderLeft: `3px solid ${statusColor(task.status)}`
+-                    }}>
+-                        <div style={{ fontWeight: 'bold', fontSize: '11px' }}>
+-                            {statusIcon(task.status)} {task.title}
+-                        </div>
+-                        <div style={{ fontSize: '10px', color: '#888', marginTop: 2 }}>
+-                            → {task.assigned_to || 'Unassigned'}
+-                        </div>
+-                    </div>
++                    <li key={task.id} className="ao-task">
++                        <span className="ao-task-title">{task.title}</span>
++                        <span className="ao-task-meta">{statusBadge(task.status)}{task.assigned_to || 'Unassigned'}</span>
++                    </li>
                  ))}
-             </div>
+-            </div>
++            </ul>
  
 -            <div style={{ marginTop: 8, fontSize: '10px', color: '#555', borderTop: '1px solid #333', paddingTop: 6 }}>
 -                🤖 Engine: Ollama Local • 💾 SQLite Persistence
-+            <div style={{ marginTop: 8, fontSize: '10px', color: '#888', borderTop: '1px solid #333', paddingTop: 6 }}>
++            <div className="ao-foot">
 +                {Object.entries(metrics).map(([id, m]) => (
-+                    <div key={id}>
-+                        {id}: ✅ {m.tasksCompleted} · ⛔ {m.tasksBlocked} · {m.tokensUsed} tok · rep {m.reputation.toFixed(2)}
-+                    </div>
++                    <span key={id}>
++                        {id}: {m.tasksCompleted} completed · {m.tasksBlocked} blocked · {m.tokensUsed} tokens · reputation {m.reputation.toFixed(2)}
++                    </span>
 +                ))}
-+                <div style={{ color: '#555', marginTop: 4 }}>
-+                    🤖 Engine: Ollama Local • 💾 SQLite Persistence{readonly ? ' • 👁 Read-only' : ''}
-+                </div>
++                <span>Report text: local providers · SQLite memory{readonly ? ' · ' : ''}{readonly && <span className="ao-badge ao-chip-readonly">Read-only</span>}</span>
              </div>
-         </div>
+-        </div>
++        </section>
      );
+ }
 diff --git a/packages/ui/src/game/Game.ts b/packages/ui/src/game/Game.ts
-index b2688da..c19166a 100644
+index b2688da..07ea3ba 100644
 --- a/packages/ui/src/game/Game.ts
 +++ b/packages/ui/src/game/Game.ts
+@@ -411,7 +411,7 @@ export class OfficeScene extends Phaser.Scene {
+             }
+             g.strokePath();
+ 
+-            this.cameras.main.setBackgroundColor('#16213e');
++            this.cameras.main.setBackgroundColor(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1A1410');
+             this.cameras.main.setZoom(2);
+             this.cameras.main.centerOn(gridSize / 2, gridSize / 2);
+             this.cameras.main.setBounds(0, 0, gridSize, gridSize);
 @@ -547,7 +547,7 @@ export class OfficeScene extends Phaser.Scene {
  
                      let sprite;

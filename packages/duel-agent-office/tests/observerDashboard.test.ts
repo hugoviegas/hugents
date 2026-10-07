@@ -72,8 +72,33 @@ describe("dashboard data", () => {
     await makeRun(dir, runName(2), { summary: summary({ status: "blocked", blockedOn: "target-guard", reason: "x" }), events: [event({ agent: "player-bravo", status: "blocked", activity: "Public switch is on" })] });
     const state = buildDashboardState(await scanArtifactRoot(config(dir), NOW), config(dir), NOW);
     expect(state.runs.map((r) => r.status)).toEqual(["blocked", "completed"]);
-    expect(state.runs[0]?.players).toEqual([{ player: "bravo", status: "blocked", activity: "Public switch is on" }]);
+    expect(state.runs[0]?.players).toEqual([{ player: "bravo", status: "blocked", activity: "Public switch is on", at: "2026-10-01T10:00:01.000Z" }]);
     expect(state.totals.byStatus).toEqual({ blocked: 1, completed: 1 });
+  });
+
+  it("passes an event time only when it is a plain ISO timestamp", async () => {
+    await makeRun(dir, runName(1), { summary: summary(), events: [event({ agent: "player-alpha", at: "owner@example.com" }), event({ agent: "player-bravo" })] });
+    const state = buildDashboardState(await scanArtifactRoot(config(dir), NOW), config(dir), NOW);
+    const players = state.runs[0]?.players ?? [];
+    expect(players.find((p) => p.player === "alpha")).not.toHaveProperty("at");
+    expect(players.find((p) => p.player === "bravo")?.at).toBe("2026-10-01T10:00:01.000Z");
+    expect(JSON.stringify(state)).not.toContain("owner@example.com");
+  });
+});
+
+describe("dashboard page (Agent Office design)", () => {
+  it("ships the design tokens, the bullpen world and no inline styles or external resources", async () => {
+    const started = await startDashboard(config(dir));
+    server = started.server;
+    const page = (await get(started.port, "/")).body.toString();
+    const css = (await get(started.port, "/app.css")).body.toString();
+    expect(page).toContain("<title>Agent Office</title>");
+    for (const desk of [1, 2, 3, 4]) expect(page).toContain(`data-desk="${desk}"`);
+    // CSP is style-src 'self': inline style attributes would be dropped by the browser.
+    expect(page).not.toMatch(/\sstyle=/);
+    expect(css).toContain('[data-theme="night"]');
+    expect(css).toMatch(/--accent-primary: #4DBFB2;/);
+    expect(css).not.toMatch(/url\(|@import|https?:/);
   });
 });
 

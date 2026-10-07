@@ -166,7 +166,8 @@ describe("acceptance: synthetic artifact root", () => {
 
 describe("acceptance: dashboard has no hardcoded run data", () => {
   it("static assets contain no run ids, players, outcomes or game data", () => {
-    const assets = `${INDEX_HTML}\n${APP_JS}\n${APP_CSS}`;
+    // Design token names (`--agent-alpha`, the design system's identity colors) are styling, not run data.
+    const assets = `${INDEX_HTML}\n${APP_JS}\n${APP_CSS}`.replace(/--[\w-]+/g, "--token");
     expect(assets).not.toMatch(/\d{4}-\d{2}-\d{2}T|private-match|player-(alpha|bravo)|\b(alpha|bravo)\b|\bwin\b|\bloss\b|\bdraw\b|Tiro|Desvio|Recarga|\bturns?\b/i);
   });
 

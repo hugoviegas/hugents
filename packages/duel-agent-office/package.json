@@ -15,6 +15,7 @@
     "office:setup": "node scripts/setup-agent-office.mjs",
     "office:bridge": "tsx src/officeCli.ts",
     "office:start": "node scripts/start-office.mjs",
+    "office:theme": "tsx src/theme/officeThemeCli.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
