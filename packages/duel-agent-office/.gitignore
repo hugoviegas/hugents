@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+artifacts/
+screenshots/
+videos/
+traces/
+playwright-report/
+test-results/
+*.log
+vendor/

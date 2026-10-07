@@ -1,0 +1,46 @@
+// Clones AgentOffice (MIT, harishkotra/agent-office) at a pinned commit into the ignored vendor/ folder,
+// applies our small patch, installs and builds it. Safe to rerun. `--clone-only` stops after the checkout.
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const REPO = "https://github.com/harishkotra/agent-office.git";
+const PINNED_COMMIT = "58f11f9b31770c10bcf3d7a0618325d22bd0ee9e";
+const DIR = path.join(ROOT, "vendor", "agent-office");
+const PATCH = path.join(ROOT, "office", "agentoffice-qa.patch");
+const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+
+function run(cmd, args, cwd = ROOT, shell = false) {
+  const result = spawnSync(cmd, args, { cwd, stdio: "inherit", shell });
+  if (result.status !== 0) {
+    console.error(`Failed: ${cmd} ${args.join(" ")}`);
+    process.exit(result.status ?? 1);
+  }
+}
+const git = (args, cwd = DIR) => spawnSync("git", args, { cwd, encoding: "utf8" });
+
+if (!existsSync(DIR)) {
+  // core.autocrlf=false keeps LF endings so the patch applies the same on every OS.
+  run("git", ["-c", "core.autocrlf=false", "clone", "--quiet", REPO, DIR]);
+  run("git", ["checkout", "--quiet", PINNED_COMMIT], DIR);
+  run("git", ["config", "core.autocrlf", "false"], DIR);
+}
+if (process.argv.includes("--clone-only")) process.exit(0);
+
+if (git(["rev-parse", "HEAD"]).stdout.trim() !== PINNED_COMMIT) {
+  console.error(`vendor/agent-office is not at the pinned commit ${PINNED_COMMIT}. Delete vendor/agent-office and rerun.`);
+  process.exit(1);
+}
+if (existsSync(PATCH)) {
+  const alreadyApplied = git(["apply", "--check", "--reverse", PATCH]).status === 0;
+  if (alreadyApplied) console.log("Patch already applied.");
+  else run("git", ["apply", "--whitespace=nowarn", PATCH], DIR);
+}
+run(npm, ["install", "--no-audit", "--no-fund"], DIR, true);
+// Workspace order matters (adapters and server import core's types); a plain `npm run build` sorts alphabetically and fails.
+for (const workspace of ["core", "adapters", "server", "ui"]) {
+  run(npm, ["run", "build", `--workspace=@agent-office/${workspace}`], DIR, true);
+}
+console.log("AgentOffice ready. Start everything with: npm run office:start");

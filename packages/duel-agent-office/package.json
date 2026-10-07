@@ -1,0 +1,40 @@
+{
+  "name": "duel-agent-office",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local deterministic QA runner for Big Bang Duel (Vercel Preview + Firebase QA only).",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "agent:private-match": "tsx src/cli.ts private-match-full-game",
+    "agent:private-match:headed": "tsx src/cli.ts private-match-full-game --headed",
+    "agent:private-match:headless": "tsx src/cli.ts private-match-full-game --headless",
+    "agent:explore": "tsx src/cli.ts explore-screens",
+    "office:setup": "node scripts/setup-agent-office.mjs",
+    "office:bridge": "tsx src/officeCli.ts",
+    "office:start": "node scripts/start-office.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "agent:cleanup-artifacts": "tsx src/cleanupCli.ts",
+    "agent:sync-preview": "tsx src/syncPreviewCli.ts",
+    "agent:observe": "tsx src/observerCli.ts",
+    "agent:dashboard": "tsx src/dashboardCli.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.4",
+    "eslint": "^10.12.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@google/genai": "^2.27.0",
+    "dotenv": "^18.0.5",
+    "playwright": "^1.63.0"
+  }
+}
