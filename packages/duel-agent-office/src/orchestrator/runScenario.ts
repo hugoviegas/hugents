@@ -48,6 +48,8 @@ export interface RunDeps {
   /** Opens the two isolated players. Injected so tests never launch a browser. */
   openPlayers: (run: RunPaths, bus: EventBus, secrets: string[]) => Promise<{ alpha: PlayerSession; bravo: PlayerSession }>;
   artifactsDir: string;
+  /** Starts the optional live view once the players are open. Returns a handle that is stopped before they close. */
+  startLive?: (run: RunPaths, bus: EventBus, players: { alpha: PlayerSession; bravo: PlayerSession }) => Promise<{ stop(status: "completed" | "failed" | "stopped"): Promise<void> } | undefined>;
   now?: () => Date;
 }
 
@@ -74,10 +76,12 @@ export async function runScenario(deps: RunDeps): Promise<RunSummary> {
   let players: { alpha: PlayerSession; bravo: PlayerSession } | undefined;
   let timer: NodeJS.Timeout | undefined;
   let ctx: ScenarioContext | undefined;
+  let live: { stop(status: "completed" | "failed" | "stopped"): Promise<void> } | undefined;
 
   try {
     await bus.emit("runner", "planning", "Starting run");
     players = await deps.openPlayers(run, bus, secrets);
+    live = await deps.startLive?.(run, bus, players).catch(() => undefined);
     ctx = {
       config,
       secrets,
@@ -120,6 +124,7 @@ export async function runScenario(deps: RunDeps): Promise<RunSummary> {
     reason ?? "Run completed",
   );
 
+  await live?.stop(status === "completed" ? "completed" : "failed").catch(() => undefined);
   if (players) {
     await Promise.all([players.alpha.close(), players.bravo.close()]);
   }

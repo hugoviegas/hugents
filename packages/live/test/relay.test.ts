@@ -143,4 +143,21 @@ describe("relay", () => {
     expect(st.players).toEqual([]);
     expect(st.lastRun.status).toBe("completed");
   });
+
+  it("lets the worker announce the run over HTTP and ask whether anyone watches", async () => {
+    relay = createRelay({ viewerToken: VT, workerToken: WT, config });
+    const port = await relay.start();
+    const post = (body: unknown, token = WT) => req(port, { method: "POST", path: "/worker/run", headers: auth(token), body: JSON.stringify(body) });
+    expect((await post({ action: "begin", runId: "r9", agentId: "player-alpha" }, VT)).status).toBe(401);
+    expect((await post({ action: "begin", runId: "bad id!", agentId: "player-alpha" })).status).toBe(400);
+    expect((await post({ action: "begin", runId: "r9", agentId: "player-alpha" })).status).toBe(200);
+    expect(JSON.parse((await req(port, { path: "/worker/wanted", headers: auth(WT) })).body)).toEqual({ wanted: false });
+    const s = openStream(port);
+    await wait(50);
+    expect(JSON.parse((await req(port, { path: "/worker/wanted", headers: auth(WT) })).body)).toEqual({ wanted: true });
+    s.close();
+    expect((await post({ action: "end", runId: "r9", status: "failed" })).status).toBe(200);
+    const st = JSON.parse((await req(port, { path: "/viewer/status", headers: auth(VT) })).body);
+    expect(st).toMatchObject({ run: null, lastRun: { status: "failed" } });
+  });
 });

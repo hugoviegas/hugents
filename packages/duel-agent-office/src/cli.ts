@@ -1,6 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigError, loadConfig } from "./config.js";
+import { parseLiveWorkerConfig } from "./live/config.js";
+import { startLiveView } from "./live/liveView.js";
 import { launchPlayers } from "./browser/launch.js";
 import { runScenario } from "./orchestrator/runScenario.js";
 import { EXPLORE_FLOW, EXPLORE_SCENARIO_NAME, exploreScreens } from "./scenarios/exploreScreens.js";
@@ -32,6 +34,7 @@ async function main(argv: string[]): Promise<number> {
   if (flags.includes("--headed")) config = { ...config, headless: false };
   if (flags.includes("--headless")) config = { ...config, headless: true };
 
+  const liveSettings = parseLiveWorkerConfig(process.env);
   const summary = await runScenario({
     config,
     scenarioName,
@@ -40,6 +43,17 @@ async function main(argv: string[]): Promise<number> {
     cleanup: selected.cleanup,
     openPlayers: (run, bus, secrets) => launchPlayers(config, run, bus, secrets),
     artifactsDir: path.join(ROOT, "artifacts"),
+    ...(liveSettings
+      ? {
+          startLive: (run, bus, players) =>
+            startLiveView({
+              settings: liveSettings,
+              runId: run.runId,
+              players: [players.alpha, players.bravo],
+              onEvent: (stage) => void bus.emit("runner", stage === "gate-blocked" ? "blocked" : "working", `live view: ${stage}`).catch(() => undefined),
+            }),
+        }
+      : {}),
   });
 
   console.log(`Run ${summary.runId}: ${summary.status}${summary.reason ? ` - ${summary.reason}` : ""}`);

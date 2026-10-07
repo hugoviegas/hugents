@@ -16,6 +16,9 @@ const EMAIL_TEXT = /[\w.+-]+@[\w-]+\.[\w.-]+/;
 export class PlayerSession {
   private shots = 0;
   private tracing = false;
+  private privateStep = true;
+  /** Set by the live view so its frame gate hears about login steps at once. */
+  onPrivateStep?: (active: boolean) => void;
 
   constructor(
     readonly agent: PlayerAgent,
@@ -27,6 +30,21 @@ export class PlayerSession {
     private readonly bus: EventBus,
     private readonly config: Config,
   ) {}
+
+  /** Player label used by the live view. */
+  get label(): string {
+    return this.agent === "player-alpha" ? "alpha" : "bravo";
+  }
+
+  /** True while a login or account step runs. Starts true: live frames stay hidden until login has finished. */
+  get inPrivateStep(): boolean {
+    return this.privateStep;
+  }
+
+  private setPrivateStep(active: boolean): void {
+    this.privateStep = active;
+    this.onPrivateStep?.(active);
+  }
 
   private get credentials() {
     return this.agent === "player-alpha" ? this.config.players.alpha : this.config.players.bravo;
@@ -88,6 +106,13 @@ export class PlayerSession {
   }
 
   async login(): Promise<void> {
+    this.setPrivateStep(true);
+    await this.runLogin();
+    // Only reached on success: a failed login leaves the page on a form that may hold typed credentials.
+    this.setPrivateStep(false);
+  }
+
+  private async runLogin(): Promise<void> {
     await this.bus.emit(this.agent, "working", "Opening Preview and logging in");
     await this.page.goto(this.config.baseUrl, { waitUntil: "domcontentloaded" });
     this.assertTarget();

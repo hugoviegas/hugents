@@ -127,6 +127,43 @@ export function createRelay(opts: RelayOptions): Relay {
         return send(res, 404, { error: "not-found" });
       }
 
+      if (path === "/worker/wanted") {
+        if (req.method !== "GET") return send(res, 405, { error: "method-not-allowed" });
+        if (!sameSecret(bearer(req), opts.workerToken)) return send(res, 401, { error: "unauthorized" });
+        return send(res, 200, { wanted: !!run && viewers.size > 0 });
+      }
+
+      if (path === "/worker/run") {
+        if (req.method !== "POST") return send(res, 405, { error: "method-not-allowed" });
+        if (!sameSecret(bearer(req), opts.workerToken)) return send(res, 401, { error: "unauthorized" });
+        const body = await readBody(req);
+        let msg: Record<string, unknown> = {};
+        try {
+          msg = body === undefined ? {} : (JSON.parse(body) as Record<string, unknown>);
+        } catch {
+          return send(res, 400, { error: "invalid-run" });
+        }
+        const label = (v: unknown, max = 64) => (typeof v === "string" && /^[A-Za-z0-9_ .:-]{1,64}$/.test(v) && v.length <= max ? v : undefined);
+        const runId = label(msg.runId);
+        if (msg.action === "begin") {
+          const agentId = label(msg.agentId);
+          if (!runId || !agentId) return send(res, 400, { error: "invalid-run" });
+          self.beginRun({ runId, agentId, status: label(msg.status) ?? "working", phase: label(msg.phase) ?? "setup", startedAt: new Date().toISOString() });
+          return send(res, 200, { ok: true });
+        }
+        if (msg.action === "update") {
+          const status = label(msg.status);
+          const phase = label(msg.phase);
+          self.updateRun({ ...(status ? { status } : {}), ...(phase ? { phase } : {}) });
+          return send(res, 200, { ok: true });
+        }
+        if (msg.action === "end" && runId && (msg.status === "completed" || msg.status === "failed" || msg.status === "stopped")) {
+          self.endRun(runId, msg.status);
+          return send(res, 200, { ok: true });
+        }
+        return send(res, 400, { error: "invalid-run" });
+      }
+
       if (path === "/worker/frame") {
         if (req.method !== "POST") return send(res, 405, { error: "method-not-allowed" });
         if (!sameSecret(bearer(req), opts.workerToken)) return send(res, 401, { error: "unauthorized" });
@@ -151,7 +188,7 @@ export function createRelay(opts: RelayOptions): Relay {
   // Viewers never send anything; refuse protocol upgrades (no WebSocket input channel).
   server.on("upgrade", (_req, socket) => socket.destroy());
 
-  return {
+  const self: Relay = {
     start: () =>
       new Promise((resolve, reject) => {
         server.once("error", reject);
@@ -193,4 +230,5 @@ export function createRelay(opts: RelayOptions): Relay {
       return viewers.size;
     },
   };
+  return self;
 }

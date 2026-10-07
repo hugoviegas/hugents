@@ -327,7 +327,7 @@ export function withoutProviderSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEn
   return rest;
 }
 
-export function defaultSpawnRun(rootDir: string, registry?: ProcessRegistry) {
+export function defaultSpawnRun(rootDir: string, registry?: ProcessRegistry, baseEnv: Record<string, string> = {}) {
   return (scenario: ScenarioName, headless: boolean, options: SpawnOptions = {}): Promise<SpawnResult> =>
     new Promise((resolve) => {
       if (options.signal?.aborted) return resolve({ code: null, stdout: "", stderr: "", aborted: true });
@@ -338,7 +338,7 @@ export function defaultSpawnRun(rootDir: string, registry?: ProcessRegistry) {
         windowsHide: true,
         // Own process group on POSIX, so stopping the runner also stops the browsers it launched.
         detached: process.platform !== "win32",
-        env: { ...withoutProviderSecrets(process.env), ...options.env },
+        env: { ...withoutProviderSecrets(process.env), ...baseEnv, ...options.env },
       });
       const pid = child.pid;
       if (pid && registry) void registry.track(pid, scenario).catch(() => undefined);

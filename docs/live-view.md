@@ -45,6 +45,24 @@ Known limit: the gate decides per frame, after the frame was captured. A screen 
 between capture and decision can mislabel one frame. Mark login and account steps with `setPrivateStep` so they are
 blacked out before navigation starts.
 
+## Wiring in `duel-agent-office`
+
+Opt-in and local. With `OFFICE_LIVE_ENABLED=true` and `OFFICE_LIVE_VIEWER_TOKEN` (16+ characters), `office:bridge` hosts
+the relay on `OFFICE_LIVE_PORT` (default 3101) and hands the runner a random worker token and the loopback URL through
+its environment (`QA_LIVE_RELAY_URL`, `QA_LIVE_WORKER_TOKEN`). The runner (`src/cli.ts`) calls `startLiveView` after
+both players open:
+
+- It announces the run to the relay (`POST /worker/run`), polls `GET /worker/wanted`, and starts a capture per player
+  only while someone watches. Closing the viewer stops capture within one poll.
+- The runner's gate treats a screen as safe only when `PlayerSession.isSafeToCapture()` says so (login form, Dev Login
+  secret, join-code field, waiting room hide). A player starts in a private step and leaves it only after `login()`
+  succeeds, so a failed login keeps frames hidden.
+- One POST at a time: extra frames are dropped. If the relay is offline or refuses the token, the live view stays off
+  and the run is unaffected.
+- Optional caps: `QA_LIVE_PRESET` (`low` default), `QA_LIVE_MAX_FPS`, `QA_LIVE_MAX_WIDTH`, `QA_LIVE_MAX_HEIGHT`,
+  `QA_LIVE_QUALITY`, all clamped to the hard limits.
+- `tests/liveView.chromium.test.ts` runs real Chromium against synthetic pages and a real relay.
+
 ## Events
 
 `createLiveEmitter` writes `stream-start`, `gate-blocked`, `gate-released`, `viewer-connected`, `viewer-disconnected`
