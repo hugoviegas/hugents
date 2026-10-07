@@ -123,6 +123,8 @@ npm run agents -- export design-critic 1.0.0 critic.bundle.json
 
 Data goes to `.hugents/runtime` (git-ignored) unless `--data` is given. The CLI is local: whoever runs it is the admin named by `--as`.
 
+In the office dashboard (`npm run agent:dashboard` in `packages/duel-agent-office`), **Edit agent** shows the runtime packages of that office agent (its `officeAgent`, or the same id): versions, content hash, model, tools, capabilities, limits, boards, system prompt, skills and recent tasks with the board items they proposed. It is read only and reads `.hugents/runtime` (`HUGENTS_RUNTIME_DIR` overrides). Text goes through the office sanitizer. A change is still a new version imported with the CLI.
+
 Browser-backed test: `packages/runtime/test/flow.chromium.test.ts` runs the generated spec in real Chromium against a local fixture page. It uses the Chromium matching `playwright-core` if installed (`npx playwright-core install chromium-headless-shell`), otherwise any Playwright-installed Chromium, or `HUGENTS_CHROMIUM_PATH`, and skips with a message when none launches.
 
 ## Compatibility

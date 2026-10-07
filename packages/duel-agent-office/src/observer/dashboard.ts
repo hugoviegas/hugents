@@ -16,6 +16,7 @@ import { OFFICE_AGENT_IDS } from "../office/contract.js";
 import type { DayUsage, QuotaStore } from "../office/quota.js";
 import { listReports, readReport, REPORT_FILE, REPORT_SEVERITIES, type ReportEntry } from "../office/reports.js";
 import { createRepoReader, RepoError, type GithubOptions } from "../office/repoSource.js";
+import { runtimeAgentsFor } from "../office/runtimeAgents.js";
 
 /** What the browser receives. Built field by field from sanitized data: never raw JSON, paths or URLs. */
 export interface DashboardState {
@@ -205,6 +206,8 @@ export interface OfficeStores {
   github?: GithubOptions;
   /** Live browser view. The viewer token stays on this server; the page only ever calls /api/live/*. */
   live?: { relayUrl: string; viewerToken: string };
+  /** Data folder of the agent runtime (packages/runtime). Read only, shown in the agent editor. */
+  runtimeDir?: string;
 }
 
 const REPORT_LIMIT = 200;
@@ -295,6 +298,12 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
         if (text === undefined) return send(res, 404, "application/json; charset=utf-8", JSON.stringify({ error: "No such report" }));
         // Line by line, so the Markdown keeps its shape while URLs, e-mails and ids are masked once more.
         return send(res, 200, "application/json; charset=utf-8", JSON.stringify({ text: text.split("\n").map((l) => sanitizeText(l, 600)).join("\n") }));
+      }
+      if (url.pathname === "/api/runtime-agents") {
+        const agentId = url.searchParams.get("agent");
+        if (!(OFFICE_AGENT_IDS as readonly (string | null)[]).includes(agentId)) return send(res, 400, "application/json; charset=utf-8", JSON.stringify({ error: "Unknown agent" }));
+        const packages = stores.runtimeDir ? await runtimeAgentsFor(stores.runtimeDir, agentId as string) : [];
+        return send(res, 200, "application/json; charset=utf-8", JSON.stringify({ enabled: Boolean(stores.runtimeDir), packages }));
       }
       if (url.pathname === "/api/github") {
         // Read-only: a summary of one configured source. The source comes from the saved list, never from the request.

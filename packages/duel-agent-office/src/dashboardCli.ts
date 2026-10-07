@@ -45,6 +45,8 @@ async function main(): Promise<void> {
       process.env.OFFICE_LIVE_ENABLED === "true" && (process.env.OFFICE_LIVE_VIEWER_TOKEN ?? "").trim().length >= 16
         ? { relayUrl: `http://127.0.0.1:${Number(process.env.OFFICE_LIVE_PORT ?? 3101)}`, viewerToken: process.env.OFFICE_LIVE_VIEWER_TOKEN!.trim() }
         : undefined,
+    // Agent runtime packages (packages/runtime), read only. Same default folder as `npm run agents`.
+    runtimeDir: process.env.HUGENTS_RUNTIME_DIR?.trim() || path.join(ROOT, "..", "..", ".hugents", "runtime"),
   };
   const { port } = await startDashboard(config, office, layout, stores);
   const host = config.host.includes(":") ? `[${config.host}]` : config.host;
