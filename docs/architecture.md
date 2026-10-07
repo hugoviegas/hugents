@@ -10,6 +10,7 @@
 - `adapters`: map project manifests to target-specific selectors and flows.
 - `scenarios`: reusable QA scenarios independent of any single project.
 - `generator`: proposes test scenarios for human review.
+- `runtime`: runs agents defined as versioned packages; artifacts and boards connect them, humans approve (see agent-runtime.md).
 - `api`: stores tasks and sanitized events, exposes admin and read-only views.
 - `ui`: small interactive agent office interface.
 - `cli`: local commands to run workers and inspect state.

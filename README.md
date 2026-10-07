@@ -44,6 +44,7 @@ All events are sanitized before leaving the worker boundary.
 - `packages/adapters/`: planned project adapters from manifest to runtime behavior.
 - `packages/scenarios/`: planned reusable QA scenarios.
 - `packages/generator/`: planned scenario/test proposal generator.
+- `packages/runtime/`: configurable agent runtime: versioned agent packages, artifact registry, boards with human approval gates ([docs/agent-runtime.md](docs/agent-runtime.md)).
 - `packages/api/`: planned backend API surface.
 - `packages/ui/`: planned agent office interface.
 - `packages/cli/`: planned command-line entry points.

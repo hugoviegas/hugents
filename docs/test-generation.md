@@ -112,4 +112,4 @@ Playwright's test agents (planner, generator, healer) and the `seed.spec.ts` see
 
 ## Not built yet
 
-See the pull request for the audit. In short: persistent draft storage, the admin surface that calls `approveDraft`, a real model provider, and running the executor in a killable child process.
+See the pull request for the audit. In short: the remote admin surface that calls `approveDraft` (the local runtime CLI and `approveRun` cover local use, see [agent-runtime.md](agent-runtime.md); drafts persist through its `DbDraftRepository`), a real model provider, and running the executor in a killable child process.
