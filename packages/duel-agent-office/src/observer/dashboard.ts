@@ -14,7 +14,7 @@ import { AGENT_COMMANDS, DEFAULT_CONFIGS, EXPLORE_SCREEN_NAMES, type AgentConfig
 import type { Connections, ConnectionStore } from "../office/connections.js";
 import { OFFICE_AGENT_IDS } from "../office/contract.js";
 import type { DayUsage, QuotaStore } from "../office/quota.js";
-import { listReports, readReport, REPORT_SEVERITIES, type ReportEntry } from "../office/reports.js";
+import { listReports, readReport, REPORT_FILE, REPORT_SEVERITIES, type ReportEntry } from "../office/reports.js";
 import { createRepoReader, RepoError, type GithubOptions } from "../office/repoSource.js";
 
 /** What the browser receives. Built field by field from sanitized data: never raw JSON, paths or URLs. */
@@ -33,6 +33,8 @@ export interface DashboardState {
     commands: typeof AGENT_COMMANDS;
     screens: readonly string[];
     connections: Connections;
+    /** Agents that share one runner round: stopping one stops all of them. */
+    sharedRun: readonly string[];
   };
   totals: FindingsReport["totals"];
   repeated: FindingsReport["repeated"];
@@ -63,6 +65,14 @@ const ROSTER = [
   { id: "test-planner", name: "Test Planner", role: "Reads the game's code and plans the test setup", look: 6 },
 ] as const;
 
+const SHARED_RUN: readonly string[] = ["player-alpha", "player-bravo"];
+
+/** File name of a report. A name that looks like one of ours is kept as is (its timestamp would read as a token to the sanitizer). */
+const reportName = (p: string) => {
+  const name = p.split(/[\\/]/).pop() ?? "";
+  return REPORT_FILE.test(name) ? name : sanitizeText(name, 120);
+};
+
 /** Office data as the page gets it: every free-text field sanitized again, report paths reduced to their file name. */
 export function sanitizeOfficeView(view: OfficeView): OfficeView {
   return {
@@ -72,7 +82,7 @@ export function sanitizeOfficeView(view: OfficeView): OfficeView {
       title: sanitizeText(t.title, 200),
       activity: sanitizeText(t.activity, 160),
       ...(t.summary !== undefined ? { summary: sanitizeText(t.summary, 400) } : {}),
-      ...(t.reportPath !== undefined ? { reportPath: sanitizeText(t.reportPath.split(/[\\/]/).pop() ?? "", 120) } : {}),
+      ...(t.reportPath !== undefined ? { reportPath: reportName(t.reportPath) } : {}),
       ...(t.runId !== undefined ? { runId: RUN_NAME.test(t.runId) ? t.runId : "run" } : {}),
     })),
     events: view.events.map((e) => ({ ...e, activity: sanitizeText(e.activity, 160), at: ISO_TIME.test(e.at) ? e.at : "" })),
@@ -87,7 +97,7 @@ export function buildDashboardState(
   now: Date,
   office: OfficeView | null = null,
   layout: OfficeLayout = DEFAULT_LAYOUT,
-  settings: DashboardState["settings"] = { configs: DEFAULT_CONFIGS, usage: {}, commands: AGENT_COMMANDS, screens: EXPLORE_SCREEN_NAMES, connections: { sources: [] } },
+  settings: DashboardState["settings"] = { configs: DEFAULT_CONFIGS, usage: {}, commands: AGENT_COMMANDS, screens: EXPLORE_SCREEN_NAMES, connections: { sources: [] }, sharedRun: SHARED_RUN },
 ): DashboardState {
   const report = buildReport(
     scanned.map((s) => s.report),
@@ -212,6 +222,7 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
     commands: AGENT_COMMANDS,
     screens: EXPLORE_SCREEN_NAMES,
     connections: stores.connections ? await stores.connections.get() : { sources: [] },
+    sharedRun: SHARED_RUN,
   });
   const server = createServer(async (req, res) => {
     try {

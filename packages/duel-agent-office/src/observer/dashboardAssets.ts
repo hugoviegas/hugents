@@ -40,6 +40,9 @@ export const INDEX_HTML = `<!doctype html>
 <nav aria-label="Views" class="nav">
 <button type="button" id="edit-open" class="btn">Edit layout</button>
 <a class="btn" href="#tasks">Tasks</a>
+<a class="btn" href="#reports">Reports</a>
+<a class="btn" href="#connections">Connections</a>
+<button type="button" id="cleanup-btn" class="btn btn-danger" hidden></button>
 <a class="btn" href="#findings">Findings <span id="nav-count" class="count">0</span></a>
 <a class="btn" href="#runs">Runs</a>
 <label class="theme-pick">Theme <select id="theme">${THEME_OPTIONS}</select></label>
@@ -52,6 +55,7 @@ export const INDEX_HTML = `<!doctype html>
 </div>
 <p id="edit-notice" class="notice" hidden>The editor changes how the office looks. It cannot change permissions, credentials, game logic or safety rules.</p>
 <div id="banner" class="banner" role="status" hidden></div>
+<p id="flash" class="notice" role="status" hidden></p>
 <p id="announce" class="sr-only" aria-live="polite"></p>
 <main class="main">
 <aside id="rail" class="panel rail" aria-label="Editor tools" hidden></aside>
@@ -78,6 +82,17 @@ ${WORLD_SVG}
 <section id="tasks" class="panel" aria-labelledby="tasks-h">
 <div class="panel-head"><h2 id="tasks-h" class="room-title">Task board</h2><span id="tasks-sub" class="caption"></span></div>
 <div id="task-list"></div>
+</section>
+<section id="reports" class="panel wide" aria-labelledby="reports-h">
+<div class="panel-head"><h2 id="reports-h" class="room-title">Reports</h2><span id="reports-sub" class="caption"></span></div>
+<form id="report-filters" class="filters" aria-label="Filter reports"></form>
+<div class="reports-grid"><div id="report-list" class="report-list"></div><article id="report-view" class="report-view" aria-live="polite"></article></div>
+</section>
+<section id="connections" class="panel wide" aria-labelledby="connections-h">
+<div class="panel-head"><h2 id="connections-h" class="room-title">Connections</h2><span id="connections-sub" class="caption"></span></div>
+<p class="caption">Read-only. The office reads repositories to plan tests; it never writes to GitHub or to a checkout. A GITHUB_TOKEN set before starting the office is only for private repositories and rate limits.</p>
+<div id="source-list" class="source-list"></div>
+<form id="source-form" class="source-form" aria-label="Add a source"></form>
 </section>
 <section id="findings" class="panel" aria-labelledby="findings-h">
 <div class="panel-head"><h2 id="findings-h" class="room-title">Findings</h2><span id="findings-sub" class="caption"></span></div>
@@ -187,7 +202,7 @@ ${STATES.map((s) => `.badge.s-${s}{--c:var(--state-${s})}`).join("\n")}
 .activity{font:var(--type-label);font-weight:400;color:var(--text-muted);overflow-wrap:anywhere}
 .agent[aria-pressed="true"] .activity{color:var(--text-primary)}
 .swatch{flex:none;width:10px;height:10px;outline:1px solid var(--outline);background:var(--c)}
-.id-1{--c:var(--agent-alpha)}.id-2{--c:var(--agent-explorer)}.id-3{--c:var(--agent-analyst)}.id-4{--c:var(--agent-critic)}
+.id-1{--c:var(--agent-alpha)}.id-2{--c:var(--agent-explorer)}.id-3{--c:var(--agent-analyst)}.id-4{--c:var(--agent-critic)}.id-5{--c:#E0A63F}.id-6{--c:#4DBFB2}
 
 .office{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;background:color-mix(in srgb,var(--outline),var(--bg) 15%);border:1px solid var(--panel-border);border-radius:var(--radius-lg);overflow:hidden}
 .office-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) var(--space-4);flex-wrap:wrap}
@@ -328,6 +343,42 @@ ${MATERIAL_CSS}
 .players{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
 .players li{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;font:var(--type-label);font-weight:400;color:var(--text-secondary)}
 
+.panel.wide{grid-column:1/-1}
+.tabs{display:grid;grid-template-columns:repeat(2,1fr);border:1px solid var(--panel-border);border-radius:var(--radius-md);overflow:hidden}
+.tabs button{all:unset;box-sizing:border-box;min-height:44px;text-align:center;font:var(--type-label);cursor:pointer}
+.tabs button+button{border-left:1px solid var(--panel-border)}
+.tabs button[aria-pressed="true"]{background:var(--accent-primary);color:var(--on-fill)}
+.tabs button:focus-visible{box-shadow:var(--shadow-focus)}
+.cfg{display:flex;flex-direction:column;gap:var(--space-4)}
+.cfg label.label{display:flex;flex-direction:column;gap:var(--space-1)}
+.cfg .hint{font:var(--type-caption);color:var(--text-muted);font-weight:400}
+.meter{font:var(--type-label);font-weight:400;color:var(--text-secondary)}
+.checks{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+.checks label{display:inline-flex;align-items:center;gap:var(--space-2);min-height:36px;padding:0 var(--space-3);border:1px solid var(--panel-border);border-radius:var(--radius-md);font:var(--type-code);cursor:pointer}
+.checks input{margin:0}
+.commands{display:flex;flex-direction:column;gap:var(--space-2)}
+.commands .cmd{display:flex;flex-direction:column;gap:2px}
+.filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-3)}
+.filters label{display:flex;flex-direction:column;gap:var(--space-1);font:var(--type-label)}
+.filters .field{min-width:140px;width:auto}
+.reports-grid{display:grid;grid-template-columns:minmax(260px,1fr) minmax(280px,2fr);gap:var(--space-5);align-items:start}
+.report-list{display:flex;flex-direction:column;gap:var(--space-3);max-height:520px;overflow:auto}
+.report-list h3{position:sticky;top:0;background:var(--panel-bg);padding:2px 0}
+.report-item{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid var(--panel-raised);border-radius:var(--radius-md);cursor:pointer}
+.report-item:hover{border-color:var(--panel-border)}
+.report-item:focus-visible{box-shadow:var(--shadow-focus)}
+.report-item[aria-pressed="true"]{background:var(--panel-raised);border-color:var(--selected)}
+.report-item .frow{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+.report-view{min-width:0;display:flex;flex-direction:column;gap:var(--space-2)}
+.report-text{margin:0;padding:12px;background:var(--screen-bg);color:var(--screen-text);font:var(--type-log);white-space:pre-wrap;overflow-wrap:anywhere;max-height:520px;overflow:auto}
+.source-list{display:flex;flex-direction:column;gap:var(--space-3)}
+.source{display:flex;flex-direction:column;gap:var(--space-2);padding:12px;border:1px solid var(--panel-raised);border-radius:var(--radius-md)}
+.source .frow{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+.source .summary{display:flex;flex-direction:column;gap:2px;font:var(--type-label);font-weight:400;color:var(--text-secondary)}
+.source-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--space-3);margin-top:var(--space-3)}
+.source-form label{display:flex;flex-direction:column;gap:var(--space-1);font:var(--type-label)}
+.source-form .field{width:auto;min-width:160px}
+@media (max-width:760px){.reports-grid{grid-template-columns:1fr}}
 @media (max-width:640px){.topbar,.main{padding-left:var(--space-4);padding-right:var(--space-4)}.lower{padding-left:var(--space-4);padding-right:var(--space-4)}.world-wrap{padding:0 var(--space-2)}.nav{margin-left:0}.world .tag,.world .sign{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 `;
@@ -339,7 +390,9 @@ export const APP_JS = `
 const $ = (id) => document.getElementById(id);
 const STATES = ${JSON.stringify(STATES)};
 const WORDS = { queued: "Queued", idle: "Idle", planning: "Planning", working: "Working", waiting: "Waiting", reviewing: "Reviewing", blocked: "Blocked", completed: "Completed", failed: "Failed", offline: "Offline", active: "Active" };
-const view = { data: null, raw: "", runId: null, agent: null, offline: false, lastStates: {}, drafts: {}, notes: {}, sending: false, edit: null };
+const view = { data: null, raw: "", runId: null, agent: null, offline: false, lastStates: {}, drafts: {}, notes: {}, sending: false, edit: null,
+  tab: "overview", cfg: {}, reportsKey: null, flashTimer: null, conn: { kind: "github", label: "", path: "", repo: "", ref: "" }, github: {},
+  rep: { filters: { agent: "", severity: "", task: "", from: "", to: "" }, list: [], total: 0, open: null, text: "", built: false } };
 const PROPS = ${JSON.stringify(PROP_TYPES)};
 const GRID = ${JSON.stringify(GRID)};
 const MATERIALS = ${JSON.stringify(MATERIALS)};
@@ -436,6 +489,10 @@ function renderTop(run) {
       : "Last known " + fmtTime(view.data.generatedAt) + ".";
   }
   $("nav-count").textContent = String(run ? run.findings.length : 0);
+  const stale = office() && up ? office().staleRunners || 0 : 0;
+  const cleanup = $("cleanup-btn");
+  cleanup.hidden = !stale || readonlyOffice();
+  cleanup.textContent = "Clean up stuck runners (" + stale + ")";
 }
 
 function renderRoster(facts) {
@@ -601,6 +658,11 @@ function assignForm(f) {
   return form;
 }
 
+function openLink(file) {
+  const b = el("button", { type: "button", class: "btn", "data-key": "open-" + file }, "Open report");
+  b.addEventListener("click", () => { openReport(file); $("reports").scrollIntoView({ block: "start" }); });
+  return b;
+}
 function taskItem(t, withAgent) {
   const who = withAgent ? roster().find((a) => a.id === t.agentId) : null;
   return el("li", null,
@@ -609,7 +671,147 @@ function taskItem(t, withAgent) {
       el("span", { class: "ts" }, fmtTime(t.updatedAt))),
     el("span", { class: "ttl" }, t.title),
     el("span", { class: "sum" }, t.summary || t.activity),
-    t.reportPath || t.runId ? el("span", { class: "mono" }, [t.reportPath ? "Report " + t.reportPath : null, t.runId ? "Run " + t.runId : null, t.usedFallback ? "template text" : null].filter(Boolean).join(" · ")) : null);
+    t.reportPath || t.runId ? el("span", { class: "mono" }, [t.reportPath ? "Report " + t.reportPath : null, t.runId ? "Run " + t.runId : null, t.usedFallback ? "template text" : null].filter(Boolean).join(" · ")) : null,
+    t.reportPath ? openLink(t.reportPath) : null);
+}
+
+const SEV_WORDS = { none: "No findings", low: "Low", medium: "Medium", high: "High" };
+const settings = () => (view.data && view.data.settings) || null;
+const cfgSaved = (id) => { const s = settings(); return s && s.configs[id] ? s.configs[id] : null; };
+function cfgDraft(id) {
+  if (!view.cfg[id]) { const c = cfgSaved(id); if (!c) return null; view.cfg[id] = clone(c); }
+  return view.cfg[id];
+}
+const cfgDirty = (id) => !!view.cfg[id] && JSON.stringify(view.cfg[id]) !== JSON.stringify(cfgSaved(id));
+async function postJson(url, body) {
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, data };
+  } catch {
+    return { ok: false, status: 0, data: { error: "The Agent Office server is not reachable." } };
+  }
+}
+function flash(text) {
+  const n = $("flash");
+  n.textContent = text;
+  n.hidden = false;
+  clearTimeout(view.flashTimer);
+  view.flashTimer = setTimeout(() => { n.hidden = true; }, 7000);
+}
+const whole = (v) => Math.max(0, Math.floor(Number(v) || 0));
+
+function field(label, control, hint) {
+  return el("label", { class: "label" }, label, control, hint ? el("span", { class: "hint" }, hint) : null);
+}
+
+function editForm(f) {
+  const d = cfgDraft(f.id);
+  if (!d) return el("p", { class: "empty" }, view.offline ? "Settings are not available while the office is unreachable." : "Loading settings…");
+  const ro = readonlyOffice();
+  const s = settings();
+  const q = d.quota;
+  const used = (s && s.usage[f.id]) || { tasks: 0, tokens: 0 };
+  const note = view.notes["cfg-" + f.id];
+  const save = el("button", { type: "submit", class: "btn btn-primary", "data-key": "cfg-save" }, "Save " + f.name);
+  const discard = el("button", { type: "button", class: "btn", "data-key": "cfg-discard" }, "Discard changes");
+  const sync = () => { save.disabled = ro || !cfgDirty(f.id) || !d.objective.trim(); discard.disabled = !cfgDirty(f.id); };
+
+  const objective = el("textarea", { class: "field", rows: "3", maxlength: "300", "data-key": "cfg-objective" });
+  objective.value = d.objective;
+  objective.addEventListener("input", () => { d.objective = objective.value; sync(); });
+  const skill = el("textarea", { class: "field", rows: "6", maxlength: "2000", "data-key": "cfg-skill" });
+  skill.value = d.skill;
+  skill.addEventListener("input", () => { d.skill = skill.value; sync(); });
+  const tasks = el("input", { class: "field", type: "number", min: "0", max: "500", step: "1", "data-key": "cfg-tasks" });
+  tasks.value = String(q.maxTasksPerDay);
+  tasks.addEventListener("input", () => { q.maxTasksPerDay = whole(tasks.value); sync(); });
+  const tokens = el("input", { class: "field", type: "number", min: "0", max: "5000000", step: "1000", "data-key": "cfg-tokens" });
+  tokens.value = String(q.maxTokensPerDay);
+  tokens.addEventListener("input", () => { q.maxTokensPerDay = whole(tokens.value); sync(); });
+  const focus = el("input", { class: "field", type: "text", maxlength: "300", "data-key": "cfg-focus", placeholder: "For example: only the Missions tabs" });
+  focus.value = d.scope.focus;
+  focus.addEventListener("input", () => { d.scope.focus = focus.value; sync(); });
+  for (const c of [objective, skill, tasks, tokens, focus]) if (ro) c.disabled = true;
+
+  const parts = [
+    field("Objective", objective, "What this agent is trying to find out. It is the task text when you run a command, and it heads every report."),
+    field("Skill", skill, "Extra instructions for how this agent writes its report. It cannot change tools, scenarios or safety rules."),
+    el("div", { class: "pair" }, field("Tasks per day", tasks, "0 means no limit"), field("Tokens per day", tokens, "0 means no limit")),
+    el("p", { class: "meter" }, "Today: " + used.tasks + (q.maxTasksPerDay ? " of " + q.maxTasksPerDay : "") + " tasks, " + used.tokens + (q.maxTokensPerDay ? " of " + q.maxTokensPerDay : "") + " tokens"),
+  ];
+  if (f.id === "explorer" && s) {
+    const box = el("div", { class: "checks", role: "group", "aria-label": "Screens to tour" });
+    for (const name of s.screens) {
+      const cb = el("input", { type: "checkbox", "data-key": "cfg-screen-" + name });
+      cb.checked = d.scope.screens.includes(name);
+      if (ro) cb.disabled = true;
+      cb.addEventListener("change", () => {
+        d.scope.screens = cb.checked ? [...d.scope.screens, name] : d.scope.screens.filter((x) => x !== name);
+        sync();
+      });
+      box.append(el("label", null, cb, name));
+    }
+    parts.push(el("div", { class: "block" }, el("span", { class: "label" }, "Screens to tour"), box, el("span", { class: "hint" }, "None ticked means all screens. The runner reads this when the next round starts.")));
+  }
+  parts.push(field("Focus", focus, "Free text for the report writer. It does not limit what the runner does."));
+  const form = el("form", { class: "cfg", "aria-label": "Edit " + f.name }, ...parts,
+    el("div", { class: "assign-row" }, save, discard, el("span", { class: "form-note" + (note && note.err ? " err" : ""), role: "status" }, ro ? "The office is read-only." : note ? note.text : "")));
+  sync();
+  discard.addEventListener("click", () => { delete view.cfg[f.id]; view.notes["cfg-" + f.id] = { text: "Changes discarded." }; render(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (save.disabled) return;
+    view.notes["cfg-" + f.id] = { text: "Saving…" };
+    save.disabled = true;
+    const r = await postJson("/api/agent-config", { agentId: f.id, config: d });
+    if (r.ok) { delete view.cfg[f.id]; view.notes["cfg-" + f.id] = { text: "Saved. The next task uses these settings." }; }
+    else view.notes["cfg-" + f.id] = { text: r.data.error || "The settings were not saved.", err: true };
+    await tick(true);
+    render();
+  });
+  return form;
+}
+
+async function runCommand(f, cmd) {
+  view.sending = true;
+  view.notes[f.id] = { text: "Sending…" };
+  render();
+  const r = await postJson("/api/tasks", { agentId: f.id, command: cmd.id });
+  view.notes[f.id] = r.ok ? { text: cmd.label + ": task assigned." } : { text: r.data.error || "The task was not assigned.", err: true };
+  view.sending = false;
+  await tick(true);
+}
+
+async function stopRound(f) {
+  const r = await postJson("/api/stop", { agentId: f.id });
+  flash(r.ok ? f.name + ": stopping. The runner and its browser are being closed." : (r.data.error || "Nothing was stopped."));
+  await tick(true);
+}
+
+function commandsBlock(f) {
+  const s = settings();
+  const cmds = s && s.commands[f.id] ? s.commands[f.id] : [];
+  const cfg = cfgSaved(f.id);
+  const why = readonlyOffice() ? "The office is read-only." : !bridgeUp() ? "Start the bridge to run commands." : f.busy ? f.name + " is working." : "";
+  const note = view.notes[f.id];
+  const box = el("div", { class: "block" }, el("h3", { class: "label" }, "Commands"));
+  if (cfg) box.append(el("p", { class: "activity" }, "Objective: " + cfg.objective));
+  const list = el("div", { class: "commands" });
+  for (const c of cmds) {
+    const b = el("button", { type: "button", class: "btn btn-primary", "data-key": "cmd-" + c.id }, c.label);
+    if (why || view.sending) b.disabled = true;
+    b.addEventListener("click", () => runCommand(f, c));
+    list.append(el("div", { class: "cmd" }, b, el("span", { class: "form-note" }, c.hint)));
+  }
+  box.append(list);
+  if (f.busy && !readonlyOffice() && bridgeUp()) {
+    const stop = el("button", { type: "button", class: "btn btn-danger", "data-key": "stop" }, "Stop round");
+    stop.addEventListener("click", () => stopRound(f));
+    box.append(stop, el("span", { class: "form-note" }, s && s.sharedRun.includes(f.id) ? "This round is shared with the other player, so stopping it stops both." : "Closes the runner and its browser. The report is marked as interrupted."));
+  }
+  box.append(el("span", { class: "form-note" + (note && note.err ? " err" : ""), role: "status" }, why || (note ? note.text : "")));
+  return box;
 }
 
 function renderDetail(run, facts) {
@@ -632,9 +834,191 @@ function renderDetail(run, facts) {
     el("dt", null, "Completed"), el("dd", null, String(m.tasksCompleted)),
     el("dt", null, "Blocked"), el("dd", null, String(m.tasksBlocked)),
     el("dt", null, "Reputation"), el("dd", null, Math.round(m.reputation * 100) + "%")) : null;
-  const parts = [head, current, assignForm(f), el("div", { class: "block" }, el("h3", { class: "label" }, "Event log"), log), history];
+  const tab = (id, text) => {
+    const b = el("button", { type: "button", "aria-pressed": String(view.tab === id), "data-key": "tab-" + id }, text);
+    b.addEventListener("click", () => { view.tab = id; render(); });
+    return b;
+  };
+  const tabs = el("div", { class: "tabs", role: "group", "aria-label": "Agent view" }, tab("overview", "Overview"), tab("edit", "Edit agent"));
+  if (view.tab === "edit") { $("detail").replaceChildren(head, tabs, editForm(f)); return; }
+  const custom = assignForm(f);
+  custom.querySelector("label").textContent = "Custom task";
+  const parts = [head, tabs, current, commandsBlock(f), custom, el("div", { class: "block" }, el("h3", { class: "label" }, "Event log"), log), history];
   if (stats) parts.push(el("div", { class: "block" }, el("h3", { class: "label" }, "Record"), stats));
   $("detail").replaceChildren(...parts);
+}
+
+// ---- Reports: organised by day, filtered by agent, task, severity and date.
+function reportQuery() {
+  const f = view.rep.filters;
+  const q = new URLSearchParams();
+  for (const k of ["agent", "severity", "task", "from", "to"]) if (f[k]) q.set(k, f[k]);
+  return q.toString();
+}
+async function loadReports() {
+  try {
+    const r = await fetch("/api/reports?" + reportQuery(), { cache: "no-store" });
+    if (!r.ok) throw new Error("status " + r.status);
+    const body = await r.json();
+    view.rep.list = Array.isArray(body.reports) ? body.reports : [];
+    view.rep.total = body.total || 0;
+  } catch {
+    view.rep.list = [];
+    view.rep.total = 0;
+  }
+  renderReports();
+}
+async function openReport(file) {
+  view.rep.open = file;
+  view.rep.text = "Loading…";
+  renderReports();
+  try {
+    const r = await fetch("/api/report?" + new URLSearchParams({ file }), { cache: "no-store" });
+    const body = await r.json().catch(() => ({}));
+    view.rep.text = r.ok && typeof body.text === "string" ? body.text : "This report could not be read.";
+  } catch {
+    view.rep.text = "The Agent Office server is not reachable.";
+  }
+  renderReports();
+}
+function buildReportFilters() {
+  const form = $("report-filters");
+  const sel = (key, label, options) => {
+    const s = el("select", { class: "field", "data-key": "rf-" + key }, ...options.map(([v, t]) => el("option", { value: v }, t)));
+    s.value = view.rep.filters[key];
+    s.addEventListener("change", () => { view.rep.filters[key] = s.value; loadReports(); });
+    return el("label", null, label, s);
+  };
+  const txt = (key, label, type, placeholder) => {
+    const i = el("input", { class: "field", type, "data-key": "rf-" + key, placeholder: placeholder || null });
+    i.value = view.rep.filters[key];
+    i.addEventListener("change", () => { view.rep.filters[key] = i.value.trim(); loadReports(); });
+    return el("label", null, label, i);
+  };
+  const clear = el("button", { type: "button", class: "btn" }, "Clear filters");
+  clear.addEventListener("click", () => { view.rep.filters = { agent: "", severity: "", task: "", from: "", to: "" }; buildReportFilters(); loadReports(); });
+  form.replaceChildren(
+    sel("agent", "Agent", [["", "All agents"], ...roster().map((a) => [a.id, a.name])]),
+    sel("severity", "Severity", [["", "Any"], ["high", "High"], ["medium", "Medium"], ["low", "Low"], ["none", "No findings"]]),
+    txt("task", "Task", "search", "Task id or words"),
+    txt("from", "From", "date"), txt("to", "To", "date"), clear);
+  form.onsubmit = (event) => event.preventDefault();
+  view.rep.built = true;
+}
+function renderReports() {
+  const rep = view.rep;
+  $("reports-sub").textContent = rep.total ? (rep.list.length < rep.total ? rep.list.length + " of " + rep.total : rep.total) + (rep.total === 1 ? " report" : " reports") : "";
+  const list = $("report-list");
+  if (!rep.list.length) list.replaceChildren(el("p", { class: "empty" }, Object.values(rep.filters).some(Boolean) ? "No report matches these filters." : "No reports yet. Run a command on an agent and its report appears here."));
+  else {
+    const days = new Map();
+    for (const r of rep.list) { if (!days.has(r.day)) days.set(r.day, []); days.get(r.day).push(r); }
+    const nodes = [];
+    for (const [d, items] of days) {
+      nodes.push(el("h3", { class: "label" }, d + " · " + items.length));
+      for (const r of items) {
+        const who = roster().find((a) => a.id === r.agentId);
+        const b = el("button", { type: "button", class: "report-item", "aria-pressed": String(r.file === rep.open), "data-key": "report-" + r.file },
+          el("span", { class: "frow" }, who ? el("span", { class: "swatch id-" + who.look }) : null, el("span", { class: "label" }, who ? who.name : r.agentId),
+            r.severity === "none" ? el("span", { class: "mono" }, SEV_WORDS.none) : badge("sev", r.severity),
+            r.interrupted ? badge("s", "blocked", "Interrupted") : null, el("span", { class: "ts" }, fmtTime(r.at))),
+          el("span", { class: "ttl" }, r.taskTitle || r.title),
+          el("span", { class: "mono" }, [r.findings ? r.findings + (r.findings === 1 ? " finding" : " findings") : null, r.runId ? "Run " + r.runId : null].filter(Boolean).join(" · ")));
+        b.addEventListener("click", () => openReport(r.file));
+        nodes.push(b);
+      }
+    }
+    list.replaceChildren(...nodes);
+  }
+  const viewer = $("report-view");
+  if (!rep.open) viewer.replaceChildren(el("p", { class: "empty" }, "Pick a report to read it."));
+  else viewer.replaceChildren(el("h3", { class: "label" }, rep.open), el("pre", { class: "report-text" }, rep.text));
+}
+
+// ---- Connections: read-only sources (local checkouts and GitHub repositories).
+async function saveSources(next, doneText) {
+  const r = await postJson("/api/connections", next);
+  flash(r.ok ? doneText : (r.data.error || "The sources were not saved."));
+  await tick(true);
+  return r.ok;
+}
+async function checkSource(id) {
+  view.github[id] = { loading: true };
+  render();
+  try {
+    const r = await fetch("/api/github?" + new URLSearchParams({ source: id }), { cache: "no-store" });
+    const body = await r.json().catch(() => ({}));
+    view.github[id] = r.ok ? { data: body } : { error: body.error || "The source could not be read." };
+  } catch {
+    view.github[id] = { error: "The Agent Office server is not reachable." };
+  }
+  render();
+}
+function summaryNode(g) {
+  if (!g) return null;
+  if (g.loading) return el("p", { class: "form-note" }, "Reading…");
+  if (g.error) return el("p", { class: "form-note err" }, g.error);
+  const d = g.data;
+  const rows = [];
+  rows.push(el("span", null, (d.branch ? "Branch " + d.branch : "Branch unknown") + (d.changedFiles ? " · " + d.changedFiles + " changed file(s)" : "") + (d.description ? " · " + d.description : "")));
+  for (const c of (d.commits || []).slice(0, 5)) rows.push(el("span", { class: "mono" }, c.sha + " " + c.subject));
+  for (const p of d.pulls || []) rows.push(el("span", null, "PR #" + p.number + " ", p.url ? el("a", { href: p.url, target: "_blank", rel: "noreferrer noopener" }, p.title) : p.title, p.author ? " · " + p.author : ""));
+  for (const i of d.issues || []) rows.push(el("span", null, "Issue #" + i.number + " ", i.url ? el("a", { href: i.url, target: "_blank", rel: "noreferrer noopener" }, i.title) : i.title));
+  return el("div", { class: "summary" }, ...rows);
+}
+function renderConnections() {
+  const s = settings();
+  const c = s ? s.connections : { sources: [] };
+  const ro = readonlyOffice();
+  $("connections-sub").textContent = c.sources.length ? c.sources.length + (c.sources.length === 1 ? " source" : " sources") : "";
+  const list = $("source-list");
+  if (!c.sources.length) list.replaceChildren(el("p", { class: "empty" }, "No source yet. Add the game's repository so the Test Planner can read its code."));
+  else list.replaceChildren(...c.sources.map((src) => {
+    const isGame = c.gameSource === src.id;
+    const check = el("button", { type: "button", class: "btn", "data-key": "check-" + src.id }, "Check");
+    check.addEventListener("click", () => checkSource(src.id));
+    const use = el("button", { type: "button", class: "btn" + (isGame ? " is-on" : ""), "aria-pressed": String(isGame), "data-key": "use-" + src.id }, isGame ? "Game's code" : "Use as the game's code");
+    use.disabled = ro || isGame;
+    use.addEventListener("click", () => saveSources({ sources: c.sources, gameSource: src.id }, src.label + " is now the game's code."));
+    const remove = el("button", { type: "button", class: "btn btn-danger", "data-key": "remove-" + src.id }, "Remove");
+    remove.disabled = ro;
+    remove.addEventListener("click", () => {
+      delete view.github[src.id];
+      saveSources({ sources: c.sources.filter((x) => x.id !== src.id), ...(c.gameSource && c.gameSource !== src.id ? { gameSource: c.gameSource } : {}) }, src.label + " removed.");
+    });
+    return el("div", { class: "source" },
+      el("span", { class: "frow" }, el("strong", null, src.label), el("span", { class: "mono" }, src.kind === "github" ? "GitHub · " + src.repo + (src.ref ? "@" + src.ref : "") : "Local · " + src.path)),
+      el("div", { class: "shelf" }, check, use, remove), summaryNode(view.github[src.id]));
+  }));
+  const form = $("source-form");
+  const d = view.conn;
+  const kind = el("select", { class: "field", "data-key": "src-kind" }, el("option", { value: "github" }, "GitHub repository"), el("option", { value: "local" }, "Folder on this machine"));
+  kind.value = d.kind;
+  kind.addEventListener("change", () => { d.kind = kind.value; renderConnections(); });
+  const label = el("input", { class: "field", type: "text", maxlength: "60", "data-key": "src-label", placeholder: "Label (optional)" });
+  label.value = d.label;
+  label.addEventListener("input", () => { d.label = label.value; });
+  const main = el("input", { class: "field", type: "text", maxlength: "300", "data-key": "src-main", placeholder: d.kind === "github" ? "owner/name" : "Absolute folder path" });
+  main.value = d.kind === "github" ? d.repo : d.path;
+  main.addEventListener("input", () => { if (d.kind === "github") d.repo = main.value; else d.path = main.value; });
+  const ref = el("input", { class: "field", type: "text", maxlength: "100", "data-key": "src-ref", placeholder: "Branch or tag (optional)" });
+  ref.value = d.ref;
+  ref.addEventListener("input", () => { d.ref = ref.value; });
+  const add = el("button", { type: "submit", class: "btn btn-primary", "data-key": "src-add" }, "Add source");
+  add.disabled = ro;
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const id = "s" + Date.now().toString(36).slice(-6);
+    const entry = d.kind === "github"
+      ? { id, kind: "github", label: d.label.trim() || d.repo.trim(), repo: d.repo.trim(), ...(d.ref.trim() ? { ref: d.ref.trim() } : {}) }
+      : { id, kind: "local", label: d.label.trim() || d.path.trim().split(/[\\/]/).filter(Boolean).pop() || "Local", path: d.path.trim() };
+    const sources = [...c.sources, entry];
+    const ok = await saveSources({ sources, ...(c.gameSource ? { gameSource: c.gameSource } : { gameSource: id }) }, "Source added.");
+    if (ok) view.conn = { kind: d.kind, label: "", path: "", repo: "", ref: "" };
+    renderConnections();
+  };
+  form.replaceChildren(el("label", null, "Kind", kind), el("label", null, "Label", label), el("label", null, d.kind === "github" ? "Repository" : "Folder", main),
+    ...(d.kind === "github" ? [el("label", null, "Branch or tag", ref)] : []), add);
 }
 
 function renderTasks() {
@@ -988,6 +1372,8 @@ function render() {
   if (!view.edit) renderDetail(run, facts);
   renderTasks();
   renderLower(run);
+  if (!view.rep.built && facts.length) { buildReportFilters(); renderReports(); }
+  renderConnections();
   announce(facts);
   if (focused) {
     const again = document.querySelector('[data-key="' + focused + '"]');
@@ -1017,6 +1403,9 @@ async function tick(force) {
     if (text === view.raw && !wasOffline && !force) return;
     view.raw = text;
     view.data = JSON.parse(text);
+    const o = view.data.office;
+    const key = o ? o.tasks.map((t) => t.taskId + t.status + (t.reportPath || "")).join("|") : "";
+    if (key !== view.reportsKey) { view.reportsKey = key; loadReports(); }
   } catch {
     if (view.offline) return;
     view.offline = true;
@@ -1024,6 +1413,11 @@ async function tick(force) {
   render();
 }
 initTheme();
+$("cleanup-btn").addEventListener("click", async () => {
+  const r = await postJson("/api/cleanup", {});
+  flash(r.ok ? (r.data.stopped ? r.data.stopped + " stuck runner(s) stopped" : "No stuck runner is still running") + (r.data.forgotten ? ", " + r.data.forgotten + " old record(s) cleared." : ".") : (r.data.error || "Nothing was cleaned up."));
+  await tick(true);
+});
 wireEditor();
 render();
 tick(); setInterval(tick, 3000);
