@@ -10,6 +10,7 @@ import type { Inference } from "./inference.js";
 import { buildSafeInput, renderReport } from "./provider/report.js";
 import type { ReportChain } from "./provider/types.js";
 import type { MetricsStore } from "./metrics.js";
+import { investigate, isInvestigation, renderInvestigation } from "./investigation.js";
 import { callTool, readApprovedImages, readScreenshot, redactKeepingRunIds, type ArtifactsData, type RunPlaywrightData, type ToolDeps, scopeEnv } from "./tools.js";
 import { AGENT_COMMANDS, DEFAULT_CONFIGS, type AgentConfig, type AgentConfigStore } from "./agentConfig.js";
 import type { QuotaStore } from "./quota.js";
@@ -401,7 +402,16 @@ export async function runTask(deps: TaskDeps, task: OfficeTask, signal?: AbortSi
   }
   const evidence = templateReport(def.id, task, facts);
   const footer = provider ? `\n\n---\nReport provider: ${describeProvider(provider)}` : "";
-  const content = answer ? `${answer.text}\n\n---\n\n${evidence}${footer}` : `${evidence}${footer}`;
+  // An investigation task ("why ...?") gets its own section first: hypotheses checked against the turn log and the game's
+  // rules, then a conclusion. The model's text below it only summarises what the observer saw.
+  let investigation = "";
+  if (def.id === "qa-analyst" && isInvestigation(task.title)) {
+    say("working", "Investigating the question from the artifacts and the game code", "read_artifacts");
+    const reader = await deps.gameSource?.().catch(() => undefined);
+    investigation = `${renderInvestigation(await investigate(redactKeepingRunIds(task.title, secrets), a0, reader))}\n\n---\n\n`;
+  }
+  const body = answer ? (investigation ? `## Observer summary\n\n${answer.text.replace(/^# .*\n+/, "")}` : answer.text) : "";
+  const content = `${investigation}${body ? `${body}\n\n---\n\n` : ""}${evidence}${footer}`;
 
   say("working", "Saving the report", "write_report");
   const saved = await callTool(deps.tools, "write_report", { agentId: def.id, content, meta: { ...meta, runId: resolvedRunId } });

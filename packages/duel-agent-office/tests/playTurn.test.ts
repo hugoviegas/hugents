@@ -74,3 +74,16 @@ describe("chooseCard", () => {
     expect(chooseCard(hand([["Nova carta", true]]))?.name).toBe("Nova carta");
   });
 });
+
+describe("chooseCard style", () => {
+  it("defensive reloads first and avoids opening with a shot, unlike aggressive", () => {
+    const h = hand([["Tiro", true], ["Recarga", true], ["Desvio", true], ["Contra-golpe", true]]);
+    expect(chooseCard(h, ctx(1, 1))?.name).toBe("Tiro");
+    expect(chooseCard(h, ctx(1, 1), "defensive")?.name).toBe("Recarga");
+  });
+
+  it("defensive uses Contra-golpe at full ammo", () => {
+    const h = hand([["Tiro", true], ["Recarga", true], ["Contra-golpe", true]]);
+    expect(chooseCard(h, ctx(3, 1), "defensive")?.name).toBe("Contra-golpe");
+  });
+});

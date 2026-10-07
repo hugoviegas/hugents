@@ -19,6 +19,8 @@ const RUN_ID = new RegExp(`^${RUN_ID_SOURCE}$`);
 const SCREENSHOT = /^\d{2}-[a-z0-9-]+\.png$/;
 const RUN_LINE = /^Run (\S+): (completed|failed|blocked)(?: - (.*))?$/m;
 const TAIL_LINES = 50;
+/** Upper bound for the full event log kept for investigations (one run writes tens of lines). */
+const EVENT_LOG_LIMIT = 2000;
 const APPROVED_SCREENSHOT_LIMIT = 12;
 const MAX_REPORT_CHARS = 100_000;
 const RUN_TIMEOUT_MS = 15 * 60_000;
@@ -105,6 +107,8 @@ export interface ArtifactsData {
   runId: string;
   summary: unknown;
   events: unknown[];
+  /** Every event line of the run (capped), for investigations that need the whole sequence, e.g. each turn played. */
+  eventLog?: unknown[];
   console: unknown[];
   networkFailures: unknown[];
   /** Line counts of the three JSONL files; the arrays above hold at most the last `TAIL_LINES` of each. */
@@ -144,19 +148,19 @@ async function readJson(file: string): Promise<unknown | null> {
   }
 }
 
-async function readJsonlTail(file: string): Promise<{ tail: unknown[]; total: number }> {
+async function readJsonlTail(file: string): Promise<{ tail: unknown[]; total: number; all: unknown[] }> {
   try {
     const all = (await readFile(file, "utf8")).split("\n").filter(Boolean);
-    const tail = all.slice(-TAIL_LINES).map((line) => {
+    const parse = (line: string): unknown => {
       try {
         return JSON.parse(line) as unknown;
       } catch {
         return line;
       }
-    });
-    return { tail, total: all.length };
+    };
+    return { tail: all.slice(-TAIL_LINES).map(parse), total: all.length, all: all.slice(0, EVENT_LOG_LIMIT).map(parse) };
   } catch {
-    return { tail: [], total: 0 };
+    return { tail: [], total: 0, all: [] };
   }
 }
 
@@ -215,6 +219,7 @@ export async function readArtifacts(deps: ToolDeps, params: { runId?: unknown })
     runId,
     summary,
     events: events!.tail,
+    eventLog: events!.all,
     console: consoleLines!.tail,
     networkFailures: network!.tail,
     totals: { events: events!.total, console: consoleLines!.total, networkFailures: network!.total },

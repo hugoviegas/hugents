@@ -1,5 +1,5 @@
 import { InteractionFailure } from "../../errors.js";
-import { chooseCard, type VisibleCard, type VisibleContext } from "./playTurn.js";
+import { chooseCard, type PlayStyle, type VisibleCard, type VisibleContext } from "./playTurn.js";
 
 /**
  * Battle interaction contract. Everything here works on what the player can see:
@@ -85,6 +85,8 @@ export interface TurnOptions {
   deadline: number;
   clock?: Clock;
   limits?: Partial<Limits>;
+  /** Turn policy of this player; default `aggressive`. */
+  style?: PlayStyle;
 }
 
 export type TurnOutcome = { kind: "over" } | { kind: "played"; card: string };
@@ -160,7 +162,7 @@ export async function playOneTurn(view: BattleView, options: TurnOptions): Promi
       continue;
     }
 
-    return selectAndConfirm(view, hand, timer, clock, limits);
+    return selectAndConfirm(view, hand, timer, clock, limits, options.style);
   }
 }
 
@@ -170,6 +172,7 @@ async function selectAndConfirm(
   timerWasVisible: boolean,
   clock: Clock,
   limits: Limits,
+  style?: PlayStyle,
 ): Promise<TurnOutcome> {
   let hand: HandSnapshot | null = first;
   let chosen: string | null = null;
@@ -186,7 +189,7 @@ async function selectAndConfirm(
       chosen = already.name;
       break;
     }
-    const choice = chooseCard(hand.cards, hand);
+    const choice = chooseCard(hand.cards, hand, style);
     if (!choice) throw new InteractionFailure("no-playable-card");
     if (!choice.enabled) throw new InteractionFailure("card-not-enabled");
 
