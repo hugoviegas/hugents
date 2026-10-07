@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, secretValues } from "./config.js";
@@ -17,6 +18,7 @@ import { fileConnectionStore } from "./office/connections.js";
 import { fileProcessRegistry } from "./office/procs.js";
 import { fileQuotaStore } from "./office/quota.js";
 import { createRepoReader } from "./office/repoSource.js";
+import { createRelay, resolveConfig } from "@hugents/live";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const artifactsDir = path.join(ROOT, "artifacts");
@@ -64,12 +66,37 @@ console.log(
     `local vision model ${process.env.OFFICE_VISION_MODEL ? "set" : "not set"}`,
 );
 
+// Live browser view (opt-in). The relay is loopback only; frames pass through it in memory and are never stored.
+// The runner gets a random worker token per office start. Viewing needs OFFICE_LIVE_VIEWER_TOKEN (the admin login
+// will supply it once the popup lands); without it the live view stays off.
+let liveEnv: Record<string, string> = {};
+if (process.env.OFFICE_LIVE_ENABLED === "true") {
+  const viewerToken = (process.env.OFFICE_LIVE_VIEWER_TOKEN ?? "").trim();
+  if (viewerToken.length < 16) {
+    console.warn("Live view: OFFICE_LIVE_VIEWER_TOKEN (16+ characters) is required, live view stays off");
+  } else {
+    const livePort = Number(process.env.OFFICE_LIVE_PORT ?? 3101);
+    const workerToken = randomBytes(24).toString("hex");
+    const relay = createRelay({
+      port: livePort,
+      viewerToken,
+      workerToken,
+      config: resolveConfig("high"),
+      allowedOrigins: (process.env.OFFICE_LIVE_ORIGINS ?? "http://127.0.0.1:4873,http://localhost:4873").split(",").map((o) => o.trim()).filter(Boolean),
+    });
+    await relay.start();
+    secrets.push(viewerToken, workerToken);
+    liveEnv = { QA_LIVE_RELAY_URL: `http://127.0.0.1:${livePort}`, QA_LIVE_WORKER_TOKEN: workerToken };
+    console.log(`Live view relay on http://127.0.0.1:${livePort} (local only, read-only)`);
+  }
+}
+
 const bridge = createBridge({
   port,
   tools: {
     artifactsDir,
     secrets: () => secrets,
-    spawnRun: defaultSpawnRun(ROOT, registry),
+    spawnRun: defaultSpawnRun(ROOT, registry, liveEnv),
     // One run, default output `<run>/findings.json`: a findings file path set in the environment must not redirect it.
     observe: async (runId) => {
       await observe(loadObserverConfig({ ...process.env, QA_OBSERVER_FINDINGS_FILE: "" }, artifactsDir), { runDir: runId });

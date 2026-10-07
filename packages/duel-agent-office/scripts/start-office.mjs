@@ -6,9 +6,10 @@
 //   ui      (vite)  http://localhost:5173  AgentOffice UI
 // OFFICE_READONLY=true starts the read-only portfolio mode.
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "dotenv";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const VENDOR = path.join(ROOT, "vendor", "agent-office");
@@ -30,11 +31,22 @@ const processes = [
     : [{ name: "office", cmd: process.execPath, args: ["--import", "tsx", "src/dashboardCli.ts"], cwd: ROOT, shell: false }]),
 ];
 
+// The office page never reads .env (by design), but the bridge does. So that OFFICE_LIVE_ENABLED and
+// OFFICE_LIVE_VIEWER_TOKEN set in .env reach both, forward just the OFFICE_LIVE_* keys to every child.
+// Values exported in the shell win over .env.
+let liveFromFile = {};
+try {
+  const file = parse(readFileSync(path.join(ROOT, ".env")));
+  liveFromFile = Object.fromEntries(Object.entries(file).filter(([key]) => key.startsWith("OFFICE_LIVE_") && process.env[key] === undefined));
+} catch {
+  // no .env: nothing to forward
+}
+
 // Only the bridge may see the provider key. The office page, AgentOffice's server and UI never need it.
-const envWithoutKey = { ...process.env };
+const envWithoutKey = { ...process.env, ...liveFromFile };
 delete envWithoutKey.GEMINI_API_KEY;
 const children = processes.map(({ name, cmd, args, cwd, shell }) => {
-  const env = name === "bridge" ? process.env : envWithoutKey;
+  const env = name === "bridge" ? { ...process.env, ...liveFromFile } : envWithoutKey;
   const child = spawn(cmd, args, { cwd, shell, stdio: ["ignore", "pipe", "pipe"], env, windowsHide: true });
   const prefix = (chunk) =>
     chunk.toString().split("\n").filter(Boolean).forEach((line) => console.log(`[${name}] ${line}`));

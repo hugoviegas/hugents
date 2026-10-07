@@ -7,6 +7,7 @@ import { ICONS } from "../theme/icons.js";
 import { DEFAULT_THEME, THEMES, themeCss } from "../theme/tokens.js";
 import { GRID, MATERIALS, PROP_TYPES } from "../office/layout.js";
 import { SPRITES_SVG, WORLD_SVG } from "./dashboardWorld.js";
+import { LIVE_CSS, LIVE_ICONS, LIVE_JS } from "./liveDialogAssets.js";
 
 // Editor tool glyphs, 7x7 like the design system's state icons.
 const EDITOR_ICONS = {
@@ -18,7 +19,7 @@ const EDITOR_ICONS = {
   "tool-recolor": "M3 0h1v1h-1zM2 1h3v1h-3zM1 2h5v1h-5zM0 3h7v2h-7zM1 5h5v1h-5zM2 6h3v1h-3z",
 };
 
-const ICON_TEMPLATES = Object.entries({ ...ICONS, ...EDITOR_ICONS })
+const ICON_TEMPLATES = Object.entries({ ...ICONS, ...EDITOR_ICONS, ...LIVE_ICONS })
   .map(([name, d]) => `<svg data-icon="${name}" viewBox="0 0 7 7" fill="currentColor" shape-rendering="crispEdges" aria-hidden="true"><path d="${d}"></path></svg>`)
   .join("\n");
 
@@ -383,7 +384,7 @@ ${MATERIAL_CSS}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 `;
 
-export const APP_CSS = themeCss() + COMPONENT_CSS;
+export const APP_CSS = themeCss() + COMPONENT_CSS + LIVE_CSS;
 
 export const APP_JS = `
 "use strict";
@@ -820,6 +821,8 @@ function renderDetail(run, facts) {
   const head = el("div", { class: "detail-head" },
     el("div", { class: "agent-row" }, el("span", { class: "swatch id-" + f.look }), el("h2", { class: "room-title" }, f.name), badge("s", f.state)),
     el("span", { class: "role" }, f.role + (f.desk ? " · Desk " + f.desk : " · No desk")));
+  const watch = liveButtonFor(f);
+  if (watch) head.append(watch);
   const current = el("div", { class: "block" }, el("h3", { class: "label" }, bridgeUp() ? "Current task" : "Last known task"));
   if (f.task) current.append(el("p", null, f.task.title), el("p", { class: "activity" }, f.activity), el("span", { class: "ts" }, "Started " + fmtTime(f.task.createdAt)));
   else current.append(el("p", { class: "empty" }, "No task. Waiting for the next event."));
@@ -1412,6 +1415,7 @@ async function tick(force) {
   }
   render();
 }
+${LIVE_JS}
 initTheme();
 $("cleanup-btn").addEventListener("click", async () => {
   const r = await postJson("/api/cleanup", {});
