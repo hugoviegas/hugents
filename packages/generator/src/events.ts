@@ -29,14 +29,14 @@ const STAGE_EVENT: Record<Stage, { agent: AgentId | "system"; status: Status; ph
 };
 
 export interface StageEmitter {
-  emit(stage: Stage, ids?: { taskId?: string; runId?: string }): Promise<HugentsEvent>;
+  emit(stage: Stage, ids?: { taskId?: string; runId?: string; reasons?: readonly string[] }): Promise<HugentsEvent>;
 }
 
 /** Emits sanitized live events to the store. Sequence numbers continue from whatever the store already holds. */
 export function createStageEmitter(store: Store, sanitizer: Sanitizer, sessionId: string, now: () => string): StageEmitter {
   let next: number | undefined;
   return {
-    async emit(stage, ids = {}) {
+    async emit(stage, { reasons = [], ...ids } = {}) {
       if (next === undefined) {
         const existing = await store.listEvents(sessionId);
         next = (existing[existing.length - 1]?.seq ?? -1) + 1;
@@ -51,7 +51,7 @@ export function createStageEmitter(store: Store, sanitizer: Sanitizer, sessionId
         status: m.status,
         phase: m.phase,
         tool: "generate-test",
-        label: `test draft: ${stage}`,
+        label: reasons.length > 0 ? `test draft: ${stage} (${reasons.join(", ")})` : `test draft: ${stage}`,
         ...ids,
       });
       await store.appendEvent(sessionId, event);
