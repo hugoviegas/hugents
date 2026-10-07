@@ -20,6 +20,13 @@ export const SCREENS = [
   { name: "achievements", path: "/achievements" },
 ] as const;
 
+/** Screens to tour: all of them, or the names listed in `QA_EXPLORE_SCREENS` (set by the office from the explorer's scope). */
+export function selectScreens(env: NodeJS.ProcessEnv = process.env): typeof SCREENS[number][] {
+  const wanted = (env.QA_EXPLORE_SCREENS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const picked = SCREENS.filter((s) => wanted.includes(s.name));
+  return picked.length ? picked : [...SCREENS];
+}
+
 const SPLASH = /carregando/i; // "Carregando arsenal…" loading splash, shown while the app boots
 const SPLASH_TIMEOUT_MS = 8_000;
 const IDLE_TIMEOUT_MS = 1_500;
@@ -67,11 +74,12 @@ export function findRawKeys(text: string): string[] {
  */
 export async function exploreScreens(ctx: ScenarioContext): Promise<ExploreResult> {
   const { alpha, bus } = ctx;
-  await bus.emit("runner", "planning", `Planning ${EXPLORE_SCENARIO_NAME} over ${SCREENS.length} screens`);
+  const tour = selectScreens();
+  await bus.emit("runner", "planning", `Planning ${EXPLORE_SCENARIO_NAME} over ${tour.length} screens`);
   await alpha.login();
 
   const screens: ExploreResult["screens"] = [];
-  for (const { name, path } of SCREENS) {
+  for (const { name, path } of tour) {
     const { page } = alpha;
     await page.goto(`${ctx.config.baseUrl}${path}`, { waitUntil: "domcontentloaded" });
     await settle(page);

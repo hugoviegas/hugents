@@ -200,4 +200,35 @@ export const SPRITES_SVG = `<svg class="sprites" id="sprites" aria-hidden="true"
 <rect x="1" y="4" width="14" height="2" fill="#2A2A30"></rect>
 </g>
 </g>
+<g data-sprite="char-5">
+<ellipse cx="8" cy="24" rx="7" ry="1.6" fill="#000" opacity=".35"></ellipse>
+<g stroke="#120C08" stroke-width=".4">
+<rect x="4" y="19" width="3" height="5" fill="#3B3540"></rect>
+<rect x="9" y="19" width="3" height="5" fill="#3B3540"></rect>
+<rect x="1" y="11" width="2" height="5" fill="#C98F5A"></rect>
+<rect x="13" y="11" width="2" height="5" fill="#C98F5A"></rect>
+<rect x="3" y="12" width="10" height="8" fill="#8A4B32"></rect>
+<rect x="3" y="18" width="10" height="1" fill="#2A1C12"></rect>
+<rect x="4" y="6" width="8" height="6" fill="#6B4A32"></rect>
+<rect x="4" y="0" width="8" height="5" fill="#2E2219"></rect>
+<rect x="4" y="3" width="8" height="1" fill="#E0A63F"></rect>
+<rect x="1" y="4" width="14" height="2" fill="#2E2219"></rect>
+</g>
+</g>
+<g data-sprite="char-6">
+<ellipse cx="8" cy="24" rx="7" ry="1.6" fill="#000" opacity=".35"></ellipse>
+<g stroke="#120C08" stroke-width=".4">
+<rect x="4" y="19" width="3" height="5" fill="#3B3540"></rect>
+<rect x="9" y="19" width="3" height="5" fill="#3B3540"></rect>
+<rect x="1" y="12" width="2" height="6" fill="#4F7F77"></rect>
+<rect x="13" y="12" width="2" height="6" fill="#4F7F77"></rect>
+<rect x="3" y="12" width="10" height="8" fill="#4F7F77"></rect>
+<rect x="5" y="12" width="6" height="7" fill="#EFE3C8"></rect>
+<rect x="3" y="18" width="10" height="1" fill="#2A1C12"></rect>
+<rect x="4" y="6" width="8" height="6" fill="#D2A982"></rect>
+<rect x="4" y="0" width="8" height="5" fill="#5A3A2A"></rect>
+<rect x="4" y="3" width="8" height="1" fill="#4DBFB2"></rect>
+<rect x="1" y="4" width="14" height="2" fill="#5A3A2A"></rect>
+</g>
+</g>
 </svg>`;

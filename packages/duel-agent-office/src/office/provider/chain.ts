@@ -25,7 +25,7 @@ export function createReportChain(deps: ChainDeps): ReportChain {
         return { tokens: 0, used: "deterministic", attempts };
       }
       for (const provider of deps.providers) {
-        const result = await provider.generate(input, { runKey: input.run.id, ...(options?.images?.length ? { images: options.images } : {}) });
+        const result = await provider.generate(input, { runKey: `${input.run.id}:${input.agent}`, ...(options?.images?.length ? { images: options.images } : {}) });
         const last = result.attempts.at(-1);
         if (result.report && last && unsafeKinds(JSON.stringify(result.report), secrets, "output").length) {
           attempts.push(...result.attempts.slice(0, -1), { ...last, status: "unsafe-response" });

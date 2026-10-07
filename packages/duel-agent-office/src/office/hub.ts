@@ -23,6 +23,10 @@ export interface HubTask {
   runId?: string;
   reportPath?: string;
   usedFallback?: boolean;
+  /** The command this task came from (`run`, `analyze-latest`, `plan`). */
+  command?: string;
+  /** The user stopped it. */
+  stopped?: boolean;
 }
 
 export interface HubEvent {
@@ -47,6 +51,8 @@ export interface OfficeView {
   agents: HubAgent[];
   tasks: HubTask[];
   events: HubEvent[];
+  /** Runner processes recorded by an earlier office and not owned by the current bridge. */
+  staleRunners: number;
 }
 
 export interface AssignResult {
@@ -67,6 +73,10 @@ export interface OfficeHubOptions {
 export interface OfficeHub {
   view(): Promise<OfficeView>;
   assign(input: unknown): Promise<AssignResult>;
+  /** Stops the agent's running task: its runner and browsers are killed and the report is marked as interrupted. */
+  stop(agentId: unknown): Promise<{ status: number; body: { stopping?: boolean; error?: string } }>;
+  /** Stops recorded runner processes left by an earlier office. */
+  cleanup(): Promise<{ status: number; body: { stopped?: number; forgotten?: number; error?: string } }>;
   /** Resolves when every task started by `assign` has finished streaming (tests and shutdown). */
   idle(): Promise<void>;
 }
@@ -159,6 +169,7 @@ export async function createOfficeHub(options: OfficeHubOptions): Promise<Office
         usedFallback: event.result.usedFallback,
         ...(event.result.runId ? { runId: event.result.runId } : {}),
         ...(event.result.reportPath ? { reportPath: event.result.reportPath } : {}),
+        ...(event.result.stopped ? { stopped: true } : {}),
       });
     } else {
       update(task, { status: event.status === "idle" ? "working" : event.status, activity: String(event.activity ?? "") });
@@ -176,7 +187,7 @@ export async function createOfficeHub(options: OfficeHubOptions): Promise<Office
       res = await fetchImpl(`${bridge}/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId: task.taskId, agentId: task.agentId, title: task.title, memories: [] }),
+        body: JSON.stringify({ taskId: task.taskId, agentId: task.agentId, title: task.title, memories: [], ...(task.command ? { command: task.command } : {}) }),
       });
     } catch {
       return fail(task, "Bridge offline: the task was not started");
@@ -221,12 +232,15 @@ export async function createOfficeHub(options: OfficeHubOptions): Promise<Office
     async view() {
       let agents: HubAgent[] = [];
       let connected = false;
+      let staleRunners = 0;
       try {
         const res = await fetchImpl(`${bridge}/agents`, { signal: AbortSignal.timeout(AGENTS_TIMEOUT_MS) });
         if (res.ok) {
           const list = (await res.json()) as unknown;
           if (Array.isArray(list)) {
             connected = true;
+            const procs = await fetchImpl(`${bridge}/processes`, { signal: AbortSignal.timeout(AGENTS_TIMEOUT_MS) }).then((r) => (r.ok ? (r.json() as Promise<{ stale?: unknown[] }>) : null)).catch(() => null);
+            staleRunners = Array.isArray(procs?.stale) ? procs.stale.length : 0;
             agents = list
               .filter((a): a is { id: OfficeAgentId; busy?: unknown; metrics?: AgentMetrics } => !!a && isAgent((a as { id?: unknown }).id))
               .map((a) => ({ id: a.id, busy: a.busy === true, ...(a.metrics ? { metrics: a.metrics } : {}) }));
@@ -241,12 +255,37 @@ export async function createOfficeHub(options: OfficeHubOptions): Promise<Office
         agents,
         tasks: tasks.map((t) => ({ ...t })).reverse(),
         events: events.map((e) => ({ ...e })).reverse(),
+        staleRunners,
       };
+    },
+
+    async stop(agentId) {
+      if (options.readonly) return { status: 403, body: { error: "The office is read-only" } };
+      if (!isAgent(agentId)) return { status: 400, body: { error: "Unknown agent" } };
+      try {
+        const res = await fetchImpl(`${bridge}/agents/${agentId}/stop`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(AGENTS_TIMEOUT_MS * 3) });
+        if (res.status === 404) return { status: 409, body: { error: "That agent has no running task" } };
+        return res.ok ? { status: 202, body: { stopping: true } } : { status: 502, body: { error: `The bridge refused to stop the task (${res.status})` } };
+      } catch {
+        return { status: 502, body: { error: "Bridge offline: nothing was stopped" } };
+      }
+    },
+
+    async cleanup() {
+      if (options.readonly) return { status: 403, body: { error: "The office is read-only" } };
+      try {
+        const res = await fetchImpl(`${bridge}/processes/cleanup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(30_000) });
+        if (!res.ok) return { status: 502, body: { error: `The bridge refused the cleanup (${res.status})` } };
+        const body = (await res.json()) as { stopped?: number; forgotten?: number };
+        return { status: 200, body: { stopped: Number(body.stopped) || 0, forgotten: Number(body.forgotten) || 0 } };
+      } catch {
+        return { status: 502, body: { error: "Bridge offline: nothing was cleaned up" } };
+      }
     },
 
     async assign(input) {
       if (options.readonly) return { status: 403, body: { error: "The office is read-only" } };
-      const body = (input && typeof input === "object" ? input : {}) as { agentId?: unknown; title?: unknown };
+      const body = (input && typeof input === "object" ? input : {}) as { agentId?: unknown; title?: unknown; command?: unknown };
       if (!isAgent(body.agentId)) return { status: 400, body: { error: "Unknown agent" } };
       const title = typeof body.title === "string" ? body.title.trim() : "";
       if (!title || title.length > MAX_TITLE) return { status: 400, body: { error: `The task needs a title of 1 to ${MAX_TITLE} characters` } };
@@ -262,6 +301,7 @@ export async function createOfficeHub(options: OfficeHubOptions): Promise<Office
         createdAt: at,
         updatedAt: at,
         activity: "Task assigned",
+        ...(typeof body.command === "string" && /^[a-z-]{1,24}$/.test(body.command) ? { command: body.command } : {}),
       };
       tasks.push(task);
       if (tasks.length > MAX_TASKS) tasks = tasks.slice(-MAX_TASKS);

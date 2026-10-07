@@ -39,8 +39,8 @@ export interface StructuredReport {
 
 /**
  * Everything a provider may see. Built from an allowlist (see `buildSafeInput`): counts, fixed-vocabulary fields,
- * the observer's sanitized findings and relative screenshot names. No console, network or event text, no task title,
- * no memories, no images, no URLs.
+ * the observer's sanitized findings and relative screenshot names, the task text (sanitized, so the report answers it) and
+ * the cards each player played. No console, network or event text, no memories, no images, no URLs.
  */
 export interface SafeInput {
   agent: OfficeAgentId;
@@ -59,6 +59,12 @@ export interface SafeInput {
   recordCounts: { events: number; console: number; networkFailures: number };
   /** Relative names such as `alpha/03-menu.png`. References only, the pixels are never sent. */
   screenshotRefs: string[];
+  /** What the user asked, redacted and sanitized. The writer answers it first; it never overrides the rules. */
+  task?: string;
+  /** Cards played per turn, from the run's turn log. A player agent only gets its own side. */
+  turns?: { alpha?: string[]; bravo?: string[] };
+  /** The agent's own objective and skill, written by the Hugo in the office. Instructions for the writer, never run data. */
+  guidance?: string;
 }
 
 /** One approved screenshot, loaded and checked (PNG signature, size). The pixels are the only unredacted part of a request. */

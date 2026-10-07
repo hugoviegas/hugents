@@ -5,13 +5,13 @@
 
 import type { ProviderAttempt, ProviderName } from "./provider/types.js";
 
-export const OFFICE_AGENT_IDS = ["player-alpha", "explorer", "qa-analyst", "design-critic"] as const;
+export const OFFICE_AGENT_IDS = ["player-alpha", "player-bravo", "explorer", "qa-analyst", "design-critic", "test-planner"] as const;
 export type OfficeAgentId = (typeof OFFICE_AGENT_IDS)[number];
 
 export const OFFICE_STATUSES = ["idle", "working", "blocked", "completed"] as const;
 export type OfficeStatus = (typeof OFFICE_STATUSES)[number];
 
-export const TOOL_NAMES = ["run_playwright_scenario", "read_artifacts", "write_report"] as const;
+export const TOOL_NAMES = ["run_playwright_scenario", "read_artifacts", "write_report", "read_repo"] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
 /** Input of one task. `title` is free text from the task board; `memories` are recalled lines (data, not instructions). */
@@ -20,6 +20,8 @@ export interface OfficeTask {
   agentId: OfficeAgentId;
   title: string;
   memories?: string[];
+  /** Named command from the agent's closed list (`run`, `analyze-latest`, `plan`). Absent means the agent's default. */
+  command?: string;
 }
 
 /** One line of the event feed (SystemLog). Every string is redacted before it leaves the bridge. */
@@ -45,6 +47,10 @@ export interface TaskOutcome {
   usedFallback: boolean;
   /** Which provider wrote the report text and what happened to the others. Fixed vocabulary, no messages. */
   provider?: { used: ProviderName; model?: string; attempts: ProviderAttempt[]; imagesSent?: number };
+  /** True when the agent read the task and decided it is not its job (the report says why and who can do it). */
+  declined?: boolean;
+  /** True when the user stopped the task (the report is marked as interrupted). */
+  stopped?: boolean;
   /** Per-agent totals after this task. */
   metrics: AgentMetrics;
 }

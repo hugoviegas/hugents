@@ -33,6 +33,13 @@ export interface VisibleContext {
   maxAmmo: number | null;
 }
 
+/**
+ * `aggressive` is the original policy (shoot first). `defensive` reloads first and then prefers Contra-golpe/Desvio,
+ * so two runners no longer play mirrored turns: identical policies trade a shot every other turn and both reach
+ * 0 lives together, which the game reports as a draw.
+ */
+export type PlayStyle = "aggressive" | "defensive";
+
 /** Splits `Tiro Duplo, 2 BALAS, Sem munição` into the label and flags. */
 export function parseVisibleCard(
   ariaLabel: string,
@@ -53,7 +60,7 @@ export function parseAmmo(ariaLabel: string | null): { ammo: number; max: number
 const NO_CONTEXT: VisibleContext = { ownAmmo: null, opponentAmmo: null, maxAmmo: null };
 
 /** Returns the card to play, or null when nothing in the hand is playable. */
-export function chooseCard(hand: readonly VisibleCard[], ctx: VisibleContext = NO_CONTEXT): VisibleCard | null {
+export function chooseCard(hand: readonly VisibleCard[], ctx: VisibleContext = NO_CONTEXT, style: PlayStyle = "aggressive"): VisibleCard | null {
   let playable = hand.filter((c) => c.enabled);
   if (playable.length === 0) return null;
 
@@ -72,7 +79,11 @@ export function chooseCard(hand: readonly VisibleCard[], ctx: VisibleContext = N
   const exposed = ctx.ownAmmo === 0 && ctx.opponentAmmo !== null && ctx.opponentAmmo >= 1;
   const order: readonly string[] = exposed
     ? ["Desvio", "Recarga", "Tiro", "Tiro Duplo", "Contra-golpe"]
-    : fullAmmo
+    : style === "defensive"
+      ? fullAmmo
+        ? ["Contra-golpe", "Desvio", "Tiro Duplo", "Tiro", "Recarga"]
+        : ["Recarga", "Contra-golpe", "Desvio", "Tiro", "Tiro Duplo"]
+      : fullAmmo
       ? ["Tiro Duplo", "Tiro", "Contra-golpe", "Desvio", "Recarga"]
       : CARD_PRIORITY;
 

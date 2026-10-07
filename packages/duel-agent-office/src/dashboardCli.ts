@@ -4,6 +4,9 @@ import { loadObserverConfig, ObserverConfigError } from "./observer/config.js";
 import { startDashboard } from "./observer/dashboard.js";
 import { createOfficeHub, OfficeHubConfigError } from "./office/hub.js";
 import { fileLayoutStore } from "./office/layout.js";
+import { fileAgentConfigStore } from "./office/agentConfig.js";
+import { fileConnectionStore } from "./office/connections.js";
+import { fileQuotaStore } from "./office/quota.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -29,7 +32,16 @@ async function main(): Promise<void> {
     process.exit(64);
   }
   const layout = fileLayoutStore({ file: path.join(config.artifactsDir, "office", "layout.json"), readonly: process.env.OFFICE_READONLY === "true" });
-  const { port } = await startDashboard(config, office, layout);
+  const readonly = process.env.OFFICE_READONLY === "true";
+  const officeDir = path.join(config.artifactsDir, "office");
+  const stores = {
+    configs: fileAgentConfigStore({ file: path.join(officeDir, "agent-config.json"), readonly }),
+    quota: fileQuotaStore(path.join(officeDir, "usage.json")),
+    connections: fileConnectionStore({ file: path.join(officeDir, "connections.json"), readonly, seedLocalPath: process.env.OFFICE_GAME_REPO }),
+    // Read-only GitHub access. The token (optional) comes from the process environment, never from the page or a file.
+    github: { token: process.env.GITHUB_TOKEN?.trim() || undefined },
+  };
+  const { port } = await startDashboard(config, office, layout, stores);
   const host = config.host.includes(":") ? `[${config.host}]` : config.host;
   console.log(`Agent Office (local only): http://${host}:${port}/  - Ctrl+C to stop`);
 }

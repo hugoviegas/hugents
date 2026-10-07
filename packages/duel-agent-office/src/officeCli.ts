@@ -12,6 +12,11 @@ import { geminiProvider } from "./office/provider/gemini.js";
 import { ollamaProvider } from "./office/provider/ollama.js";
 import { openMetrics } from "./office/metrics.js";
 import { defaultSpawnRun } from "./office/tools.js";
+import { fileAgentConfigStore } from "./office/agentConfig.js";
+import { fileConnectionStore } from "./office/connections.js";
+import { fileProcessRegistry } from "./office/procs.js";
+import { fileQuotaStore } from "./office/quota.js";
+import { createRepoReader } from "./office/repoSource.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const artifactsDir = path.join(ROOT, "artifacts");
@@ -30,6 +35,14 @@ try {
 const providerConfig = loadProviderConfig(process.env);
 for (const warning of providerConfig.warnings) console.warn(`Provider config: ${warning}`);
 if (providerConfig.gemini) secrets.push(providerConfig.gemini.apiKey);
+// Read-only GitHub access: the token (optional) stays in this process, is redacted from every report and is not passed to the runner.
+const githubToken = process.env.GITHUB_TOKEN?.trim() || undefined;
+if (githubToken) secrets.push(githubToken);
+const officeDir = path.join(artifactsDir, "office");
+const registry = fileProcessRegistry(path.join(officeDir, "runner-pids.json"));
+const connections = fileConnectionStore({ file: path.join(officeDir, "connections.json"), readonly: false, seedLocalPath: process.env.OFFICE_GAME_REPO });
+const staleRunners = (await registry.stale()).length;
+if (staleRunners) console.warn(`${staleRunners} runner process(es) from an earlier office were recorded: use "Clean up stuck runners" in the office to stop them`);
 const ollamaOptions = {
   baseUrl: process.env.OFFICE_OLLAMA_URL,
   model: process.env.OFFICE_MODEL,
@@ -56,11 +69,19 @@ const bridge = createBridge({
   tools: {
     artifactsDir,
     secrets: () => secrets,
-    spawnRun: defaultSpawnRun(ROOT),
+    spawnRun: defaultSpawnRun(ROOT, registry),
     // One run, default output `<run>/findings.json`: a findings file path set in the environment must not redirect it.
     observe: async (runId) => {
       await observe(loadObserverConfig({ ...process.env, QA_OBSERVER_FINDINGS_FILE: "" }, artifactsDir), { runDir: runId });
     },
+  },
+  registry,
+  configs: fileAgentConfigStore({ file: path.join(officeDir, "agent-config.json"), readonly: false }),
+  quota: fileQuotaStore(path.join(officeDir, "usage.json")),
+  gameSource: async () => {
+    const all = await connections.get();
+    const source = all.sources.find((x) => x.id === all.gameSource);
+    return source ? createRepoReader(source, { token: githubToken }) : undefined;
   },
   inference,
   reporter: createReportChain({ providers, secrets: () => secrets, skipped: providerConfig.skipped }),

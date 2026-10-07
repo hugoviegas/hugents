@@ -6,6 +6,8 @@ import { parseFindingsReport, type FindingsReport } from "../observer/schema.js"
 import { redact } from "../redact.js";
 import { runTimestamp } from "../storage/artifacts.js";
 import { OFFICE_AGENT_IDS, type ToolName, type ToolResult, type ToolSpec } from "./contract.js";
+import type { ProcessRegistry } from "./procs.js";
+import { parseMeta } from "./reports.js";
 import type { ImagePart } from "./provider/types.js";
 
 /** Scenarios an agent may start. The runner itself re-checks the Preview target. */
@@ -17,6 +19,8 @@ const RUN_ID = new RegExp(`^${RUN_ID_SOURCE}$`);
 const SCREENSHOT = /^\d{2}-[a-z0-9-]+\.png$/;
 const RUN_LINE = /^Run (\S+): (completed|failed|blocked)(?: - (.*))?$/m;
 const TAIL_LINES = 50;
+/** Upper bound for the full event log kept for investigations (one run writes tens of lines). */
+const EVENT_LOG_LIMIT = 2000;
 const APPROVED_SCREENSHOT_LIMIT = 12;
 const MAX_REPORT_CHARS = 100_000;
 const RUN_TIMEOUT_MS = 15 * 60_000;
@@ -52,7 +56,7 @@ export const TOOL_SPECS: readonly ToolSpec[] = [
     description: "Saves a Markdown report to artifacts/reports/<agentId>-<timestamp>.md.",
     parameters: {
       type: "object",
-      properties: { agentId: { enum: OFFICE_AGENT_IDS }, content: { type: "string" } },
+      properties: { agentId: { enum: OFFICE_AGENT_IDS }, content: { type: "string" }, meta: { type: "object" } },
       required: ["agentId", "content"],
       additionalProperties: false,
     },
@@ -63,6 +67,15 @@ export interface SpawnResult {
   code: number | null;
   stdout: string;
   stderr: string;
+  /** True when the run was stopped on purpose (the signal fired) and not by its own end. */
+  aborted?: boolean;
+}
+
+export interface SpawnOptions {
+  /** Fires when the user stops the round: the runner and its browsers are killed. */
+  signal?: AbortSignal;
+  /** Extra runner settings from the agent's scope (fixed names only, see `scopeEnv`). */
+  env?: Record<string, string>;
 }
 
 export interface ToolDeps {
@@ -71,7 +84,10 @@ export interface ToolDeps {
   /** Known secret values (from the local config) added to every redaction. */
   secrets?: () => readonly string[];
   /** Runs the runner CLI. Injected so tests never launch a browser. */
-  spawnRun?: (scenario: ScenarioName, headless: boolean) => Promise<SpawnResult>;
+  spawnRun?: (scenario: ScenarioName, headless: boolean, options?: SpawnOptions) => Promise<SpawnResult>;
+  /** Stop signal and scope of the task using these deps (set per task by the agent playbook). */
+  signal?: AbortSignal;
+  runEnv?: Record<string, string>;
   /** Writes `<run>/findings.json` with the local observer. Called by `read_artifacts` when the file is missing. */
   observe?: (runId: string) => Promise<void>;
   now?: () => Date;
@@ -81,6 +97,8 @@ export interface RunPlaywrightData {
   runId?: string;
   status: "completed" | "failed" | "blocked";
   reason?: string;
+  /** The user stopped the run. */
+  stopped?: boolean;
   /** Relative to `artifacts/`. */
   artifactPaths: string[];
 }
@@ -89,6 +107,8 @@ export interface ArtifactsData {
   runId: string;
   summary: unknown;
   events: unknown[];
+  /** Every event line of the run (capped), for investigations that need the whole sequence, e.g. each turn played. */
+  eventLog?: unknown[];
   console: unknown[];
   networkFailures: unknown[];
   /** Line counts of the three JSONL files; the arrays above hold at most the last `TAIL_LINES` of each. */
@@ -128,28 +148,31 @@ async function readJson(file: string): Promise<unknown | null> {
   }
 }
 
-async function readJsonlTail(file: string): Promise<{ tail: unknown[]; total: number }> {
+async function readJsonlTail(file: string): Promise<{ tail: unknown[]; total: number; all: unknown[] }> {
   try {
     const all = (await readFile(file, "utf8")).split("\n").filter(Boolean);
-    const tail = all.slice(-TAIL_LINES).map((line) => {
+    const parse = (line: string): unknown => {
       try {
         return JSON.parse(line) as unknown;
       } catch {
         return line;
       }
-    });
-    return { tail, total: all.length };
+    };
+    return { tail: all.slice(-TAIL_LINES).map(parse), total: all.length, all: all.slice(0, EVENT_LOG_LIMIT).map(parse) };
   } catch {
-    return { tail: [], total: 0 };
+    return { tail: [], total: 0, all: [] };
   }
 }
 
 const exists = (file: string) => stat(file).then(() => true, () => false);
 
-/** Newest run that has a `summary.json`: a run still in progress (or crashed) has none and must not hide the last finished one. */
-export async function latestRunId(artifactsDir: string): Promise<string | undefined> {
+/**
+ * Newest run that has a `summary.json`: a run still in progress (or crashed) has none and must not hide the last finished one.
+ * With `scenario`, the newest finished run of that scenario (the run id ends with the scenario name).
+ */
+export async function latestRunId(artifactsDir: string, scenario?: ScenarioName): Promise<string | undefined> {
   try {
-    const names = (await readdir(path.join(artifactsDir, "runs"))).filter((n) => RUN_ID.test(n));
+    const names = (await readdir(path.join(artifactsDir, "runs"))).filter((n) => RUN_ID.test(n) && (!scenario || n.endsWith(`Z-${scenario}`)));
     for (const name of names.sort().reverse()) { // ISO timestamp prefix sorts chronologically
       if (await exists(path.join(artifactsDir, "runs", name, "summary.json"))) return name;
     }
@@ -199,6 +222,7 @@ export async function readArtifacts(deps: ToolDeps, params: { runId?: unknown })
     runId,
     summary,
     events: events!.tail,
+    eventLog: events!.all,
     console: consoleLines!.tail,
     networkFailures: network!.tail,
     totals: { events: events!.total, console: consoleLines!.total, networkFailures: network!.total },
@@ -260,7 +284,7 @@ export async function readScreenshot(deps: ToolDeps, runId: string, rel: string)
 
 export async function writeReport(
   deps: ToolDeps,
-  params: { agentId?: unknown; content?: unknown },
+  params: { agentId?: unknown; content?: unknown; meta?: unknown },
 ): Promise<ToolResult<{ reportPath: string }>> {
   const { agentId, content } = params;
   if (typeof agentId !== "string" || !(OFFICE_AGENT_IDS as readonly string[]).includes(agentId)) return err("Unknown agentId");
@@ -273,6 +297,11 @@ export async function writeReport(
     const rel = `reports/${agentId}-${runTimestamp(now())}${n ? `-${n}` : ""}.md`;
     try {
       await writeFile(path.join(deps.artifactsDir, rel), `${body}\n`, { flag: "wx" });
+      if (params.meta && typeof params.meta === "object") {
+        // Task, objective and run of this report: free text goes through the same redaction as the report itself.
+        const clean = parseMeta(JSON.stringify(deepRedact(params.meta, deps.secrets?.() ?? [])));
+        await writeFile(path.join(deps.artifactsDir, rel.replace(/\.md$/, ".meta.json")), `${JSON.stringify(clean, null, 2)}\n`).catch(() => undefined);
+      }
       return { ok: true, data: { reportPath: rel } };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
@@ -294,30 +323,62 @@ function serialized<T>(job: () => Promise<T>): Promise<T> {
 export function withoutProviderSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const rest = { ...env };
   delete rest.GEMINI_API_KEY;
+  delete rest.GITHUB_TOKEN;
   return rest;
 }
 
-export function defaultSpawnRun(rootDir: string) {
-  return (scenario: ScenarioName, headless: boolean): Promise<SpawnResult> =>
+export function defaultSpawnRun(rootDir: string, registry?: ProcessRegistry) {
+  return (scenario: ScenarioName, headless: boolean, options: SpawnOptions = {}): Promise<SpawnResult> =>
     new Promise((resolve) => {
+      if (options.signal?.aborted) return resolve({ code: null, stdout: "", stderr: "", aborted: true });
       const args = ["--import", "tsx", "src/cli.ts", scenario, headless ? "--headless" : "--headed"];
-      const child = spawn(process.execPath, args, { cwd: rootDir, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env: withoutProviderSecrets(process.env) });
+      const child = spawn(process.execPath, args, {
+        cwd: rootDir,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        // Own process group on POSIX, so stopping the runner also stops the browsers it launched.
+        detached: process.platform !== "win32",
+        env: { ...withoutProviderSecrets(process.env), ...options.env },
+      });
+      const pid = child.pid;
+      if (pid && registry) void registry.track(pid, scenario).catch(() => undefined);
       let stdout = "";
       let stderr = "";
+      let aborted = false;
       const cap = (s: string, chunk: Buffer) => (s + chunk.toString()).slice(-64_000);
       child.stdout.on("data", (c: Buffer) => (stdout = cap(stdout, c)));
       child.stderr.on("data", (c: Buffer) => (stderr = cap(stderr, c)));
-      const timer = setTimeout(() => child.kill(), RUN_TIMEOUT_MS);
-      child.on("close", (code) => {
+      const stop = () => {
+        if (!pid) return child.kill();
+        return registry ? registry.stop(pid).catch(() => undefined) : void child.kill();
+      };
+      const onAbort = () => {
+        aborted = true;
+        void stop();
+      };
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      const timer = setTimeout(() => void stop(), RUN_TIMEOUT_MS);
+      const done = (result: SpawnResult) => {
         clearTimeout(timer);
-        resolve({ code, stdout, stderr });
-      });
-      child.on("error", () => {
-        clearTimeout(timer);
-        resolve({ code: null, stdout, stderr: "Runner could not be started" });
-      });
+        options.signal?.removeEventListener("abort", onAbort);
+        if (pid && registry) void registry.untrack(pid).catch(() => undefined);
+        resolve({ ...result, ...(aborted ? { aborted: true } : {}) });
+      };
+      child.on("close", (code) => done({ code, stdout, stderr }));
+      child.on("error", () => done({ code: null, stdout, stderr: "Runner could not be started" }));
     });
 }
+
+/** A scope the runner understands, as environment values. Only names from the explorer's own list pass. */
+export function scopeEnv(screens: readonly string[]): Record<string, string> {
+  return screens.length ? { QA_EXPLORE_SCREENS: screens.join(",") } : {};
+}
+
+/**
+ * One match run is shared: Alpha and Bravo are two agents, but the runner needs both accounts in the same room, so a player
+ * agent commanded while the same scenario is already running joins that run instead of starting a second one.
+ */
+const inflight = new Map<string, { promise: Promise<SpawnResult>; controller: AbortController }>();
 
 export async function runPlaywrightScenario(
   deps: ToolDeps,
@@ -336,7 +397,22 @@ export async function runPlaywrightScenario(
   const spawnRun = deps.spawnRun;
   const secrets = deps.secrets?.() ?? [];
 
-  const result = await serialized(() => spawnRun(scenario as ScenarioName, headless));
+  const key = `${scenario}:${headless}`;
+  let shared = inflight.get(key);
+  if (!shared) {
+    const controller = new AbortController();
+    const promise = serialized(() => spawnRun(scenario as ScenarioName, headless, { signal: controller.signal, ...(deps.runEnv ? { env: deps.runEnv } : {}) })).finally(() => {
+      inflight.delete(key);
+    });
+    shared = { promise, controller };
+    inflight.set(key, shared);
+  }
+  // Stopping any task that uses the shared run stops the run for everyone on it.
+  const stopShared = () => shared!.controller.abort();
+  if (deps.signal?.aborted) stopShared();
+  deps.signal?.addEventListener("abort", stopShared, { once: true });
+  const result = await shared.promise.finally(() => deps.signal?.removeEventListener("abort", stopShared));
+  if (result.aborted) return { ok: true, data: { status: "blocked", reason: "Stopped by the user", stopped: true, artifactPaths: [] } };
   const line = RUN_LINE.exec(result.stdout);
   if (!line) {
     // Exit 64 is a sanitized config error (names and rules, never values).
@@ -369,5 +445,7 @@ export function callTool(deps: ToolDeps, name: ToolName, params: Record<string, 
       return readArtifacts(deps, params);
     case "write_report":
       return writeReport(deps, params);
+    case "read_repo":
+      return Promise.resolve(err("read_repo is only available to the test planner"));
   }
 }

@@ -148,7 +148,7 @@ export async function playBattle(
   await ctx.bus.emit(player.agent, "waiting", "Waiting for the first turn");
   try {
     for (;;) {
-      const turn = await playOneTurn(view, { deadline: ctx.deadline });
+      const turn = await playOneTurn(view, { deadline: ctx.deadline, style: player.agent === "player-bravo" ? "defensive" : "aggressive" });
       player.assertTarget();
       if (turn.kind === "over") break;
       turns += 1;

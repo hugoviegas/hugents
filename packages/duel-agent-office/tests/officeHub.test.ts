@@ -165,6 +165,6 @@ describe("dashboard with the office", () => {
     for (const value of ["qa-secret-preview.vercel.app", "owner@example.com", "xk29qa", "Users", "../"]) expect(text, value).not.toContain(value);
     expect(state.office?.tasks[0]).toMatchObject({ reportPath: "explorer-1.md", runId: "run" });
     expect(state.office?.events.map((e) => e.at)).toEqual(["", "2026-10-07T12:00:00.000Z"]);
-    expect(state.agents.map((a) => a.id)).toEqual(["player-alpha", "explorer", "qa-analyst", "design-critic"]);
+    expect(state.agents.map((a) => a.id)).toEqual(["player-alpha", "player-bravo", "explorer", "qa-analyst", "design-critic", "test-planner"]);
   });
 });

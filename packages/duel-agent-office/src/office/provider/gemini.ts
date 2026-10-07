@@ -106,20 +106,23 @@ export function geminiProvider(options: GeminiOptions): ReportProvider {
 
   async function tryModel(model: string, input: SafeInput, runKey: string, images: ImagePart[]) {
     let last: { status: ProviderStatus; report?: StructuredReport; tokens: number } = { status: "error", tokens: 0 };
+    let sent = images;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let reservation;
       try {
         reservation = await options.budget.reserve(runKey, model);
       } catch {
-        return { status: "error" as const, tokens: 0 };
+        return { status: "error" as const, tokens: 0, sent };
       }
-      if (reservation !== "ok") return { status: reservation, tokens: 0 };
-      last = await callOnce(model, input, images);
+      if (reservation !== "ok") return { status: reservation, tokens: 0, sent };
+      last = await callOnce(model, input, sent);
       // One bounded retry, only for transient failures. Rate limits and quota are not retried.
       if (!RETRYABLE.has(last.status) || attempt === 1) break;
+      // The same heavy request would most likely time out again: retry with half of the screenshots.
+      if (last.status === "timeout" && sent.length > 1) sent = sent.slice(0, Math.ceil(sent.length / 2));
       await sleep(options.retryDelayMs ?? 1_000);
     }
-    return last;
+    return { ...last, sent };
   }
 
   return {
@@ -132,7 +135,7 @@ export function geminiProvider(options: GeminiOptions): ReportProvider {
       for (const model of options.models) {
         const result = await tryModel(model, input, ctx.runKey, images);
         attempts.push({ provider: "gemini", model, status: result.status });
-        if (result.report) return { attempts, report: result.report, tokens: result.tokens, ...(images.length ? { imagesSent: images.length } : {}) };
+        if (result.report) return { attempts, report: result.report, tokens: result.tokens, ...(result.sent.length ? { imagesSent: result.sent.length } : {}) };
         if (!TRY_NEXT_MODEL.has(result.status)) break;
       }
       return { attempts, tokens: 0 };

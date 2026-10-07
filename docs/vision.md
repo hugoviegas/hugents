@@ -138,7 +138,7 @@ Design do escritório já está razoável (Hugo, 7/10). Falta o funcional:
 
 ## Perguntas ainda em aberto
 
-1. "Tirar o Playwright que está rodando": botão para parar a rodada em andamento, ou limpeza de processos presos?
+1. ~~"Tirar o Playwright que está rodando": botão para parar a rodada em andamento, ou limpeza de processos presos?~~ Resolvido em 7/10/2026: os dois (Parar rodada no agente e limpeza dos processos presos que o escritório iniciou).
 2. Chat livre dos agentes: confirmar que sempre mostra o que entendeu e pede confirmação antes de executar.
 3. Regeneração de roteiros após uma PR: automática ou com aprovação do Hugo antes de valer.
 4. Quais dados mascarar nos prints antes de enviar ao Gemini, e o que fazer quando a cota acabar.
