@@ -1,6 +1,6 @@
 import type { Sanitizer, Store, Task } from "@hugents/core";
 import { ApprovalError, assertRunnable } from "./approval.js";
-import type { TestDraft } from "./contracts.js";
+import type { ReasonCode, TestDraft } from "./contracts.js";
 import { createStageEmitter } from "./events.js";
 import type { Manifest } from "@hugents/core";
 import type { DraftRepository } from "./pipeline.js";
@@ -20,10 +20,16 @@ export async function enqueueApprovedDraft(store: Store, draft: TestDraft, now: 
 }
 
 /**
- * Executes a spec in the restricted harness. The real implementation lives with the worker (not built yet) and must
- * open the page through `openSeededPage`. It receives the spec text, nothing else the model produced.
+ * Executes a spec in the restricted harness (`createPlaywrightExecutor`). It opens the page through `openSeededPage`
+ * and receives the spec text, nothing else the model produced.
  */
-export type SpecExecutor = (spec: string, ctx: { draftId: string }) => Promise<{ passed: boolean }>;
+export interface ExecutorResult {
+  passed: boolean;
+  /** Reason codes only. Recorded on the draft and in the final event label. */
+  reasons?: readonly ReasonCode[];
+  blockedRequests?: number;
+}
+export type SpecExecutor = (spec: string, ctx: { draftId: string }) => Promise<ExecutorResult>;
 
 export interface RunDeps {
   store: Store;
@@ -58,14 +64,17 @@ export async function runDraftTask(deps: RunDeps, task: Task): Promise<TestDraft
   await drafts.save({ ...draft, status: "running" });
   await emitter.emit("running", ids);
   let passed = false;
+  let reasons: ReasonCode[] = [];
   try {
-    passed = (await deps.executor(draft.spec, { draftId: draft.id })).passed;
+    const result = await deps.executor(draft.spec, { draftId: draft.id });
+    passed = result.passed;
+    reasons = [...(result.reasons ?? [])];
   } catch {
     passed = false;
   }
-  const done: TestDraft = { ...draft, status: passed ? "passed" : "failed" };
+  const done: TestDraft = { ...draft, status: passed ? "passed" : "failed", reasons };
   await drafts.save(done);
   await setTask(passed ? "completed" : "failed");
-  await emitter.emit(passed ? "completed" : "failed", ids);
+  await emitter.emit(passed ? "completed" : "failed", { ...ids, reasons });
   return done;
 }
