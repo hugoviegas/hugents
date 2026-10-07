@@ -222,7 +222,17 @@ function fakeInference(text: string | null, vision = false) {
   return { inference, requests };
 }
 
-async function setupTask(agentId: OfficeTask["agentId"], inference: Inference, title = "Test the Missions screen") {
+/** A task each agent can do, since an agent now declines a task that is not its job. */
+const TITLE: Record<OfficeTask["agentId"], string> = {
+  "player-alpha": "Play the private match",
+  "player-bravo": "Join the private match",
+  explorer: "Test the Missions screen",
+  "qa-analyst": "Judge the latest run",
+  "design-critic": "Review the screenshots",
+  "test-planner": "Do it",
+};
+
+async function setupTask(agentId: OfficeTask["agentId"], inference: Inference, title = TITLE[agentId]) {
   await makeRun();
   const events: OfficeEvent[] = [];
   const metrics = await openMetrics(path.join(dir, "office", "metrics.json"));
@@ -329,7 +339,8 @@ describe("agent tasks", () => {
     const { deps, task, events } = await setupTask("design-critic", noVision.inference);
     const outcome = await runTask(deps, task);
     expect(noVision.requests).toHaveLength(0);
-    expect(outcome).toMatchObject({ status: "completed", usedFallback: true, tokensUsed: 0 });
+    // The checklist is saved, but a review that saw no screenshot did not do the task.
+    expect(outcome).toMatchObject({ status: "blocked", usedFallback: true, tokensUsed: 0, summary: expect.stringContaining("no screenshot was analysed") });
     expect(await readFile(path.join(dir, outcome.reportPath!), "utf8")).toContain("Design checklist (no vision model");
     expect(events.some((e) => e.activity.includes("No vision model configured"))).toBe(true);
   });
@@ -435,13 +446,14 @@ describe("report providers in a task", () => {
     expect(events.some((e) => e.activity.startsWith("Report provider: deterministic"))).toBe(true);
   });
 
-  it("never gives a provider the task title, memories or raw record text", async () => {
+  it("gives a provider the task text, redacted, but never memories or raw record text", async () => {
     const { p, seen } = provider([GEMINI_OK], REPORT);
-    const { deps, task } = await withChain("qa-analyst", p, `Analyst: review with ${SECRET} please`);
+    const { deps, task } = await withChain("qa-analyst", p, `Analyse the run with ${SECRET} and ${EMAIL} please`);
     task.memories = [`earlier note ${EMAIL}`];
     await runTask(deps, task);
     const sent = JSON.stringify(seen);
-    for (const forbidden of [SECRET, EMAIL, "review with", "earlier note", "boom"]) expect(sent, forbidden).not.toContain(forbidden);
+    expect(sent).toContain("Analyse the run with");
+    for (const forbidden of [SECRET, EMAIL, "earlier note", "boom"]) expect(sent, forbidden).not.toContain(forbidden);
   });
 
   it("covers player-alpha and explorer too, but design-critic keeps its local path (screenshots never leave)", async () => {

@@ -189,7 +189,7 @@ describe("design-critic end to end", () => {
       reporter: createReportChain({ providers, secrets: () => [KEY] }),
       screenshots: { max: opts.max ?? 4, maxBytes: 100_000, remote: opts.remote },
     };
-    const outcome: TaskOutcome = await runTask(deps, { taskId: "t1", agentId: opts.agent ?? "design-critic", title: `review ${RUN}` });
+    const outcome: TaskOutcome = await runTask(deps, { taskId: "t1", agentId: opts.agent ?? "design-critic", title: `${opts.agent === "qa-analyst" ? "Analyse" : "Review"} ${RUN}` });
     return { outcome, events, gemini: g, ollama: o };
   }
   const reportOf = async (outcome: TaskOutcome) => readFile(path.join(dir, outcome.reportPath!), "utf8");
@@ -200,7 +200,8 @@ describe("design-critic end to end", () => {
     const r = await critic({ remote: false, vision: false });
     expect(r.gemini.calls).toHaveLength(0);
     expect(r.ollama.requests).toHaveLength(0);
-    expect(r.outcome).toMatchObject({ status: "completed", usedFallback: true, tokensUsed: 0 });
+    expect(r.outcome).toMatchObject({ status: "blocked", usedFallback: true, tokensUsed: 0 });
+    expect(r.outcome.summary).toContain("no screenshot was analysed");
     expect(r.outcome.provider).toBeUndefined();
     expect(await reportOf(r.outcome)).toContain("Design checklist (no vision model");
   });

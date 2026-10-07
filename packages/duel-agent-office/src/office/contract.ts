@@ -47,6 +47,8 @@ export interface TaskOutcome {
   usedFallback: boolean;
   /** Which provider wrote the report text and what happened to the others. Fixed vocabulary, no messages. */
   provider?: { used: ProviderName; model?: string; attempts: ProviderAttempt[]; imagesSent?: number };
+  /** True when the agent read the task and decided it is not its job (the report says why and who can do it). */
+  declined?: boolean;
   /** True when the user stopped the task (the report is marked as interrupted). */
   stopped?: boolean;
   /** Per-agent totals after this task. */

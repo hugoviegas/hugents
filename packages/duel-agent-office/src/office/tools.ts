@@ -166,10 +166,13 @@ async function readJsonlTail(file: string): Promise<{ tail: unknown[]; total: nu
 
 const exists = (file: string) => stat(file).then(() => true, () => false);
 
-/** Newest run that has a `summary.json`: a run still in progress (or crashed) has none and must not hide the last finished one. */
-export async function latestRunId(artifactsDir: string): Promise<string | undefined> {
+/**
+ * Newest run that has a `summary.json`: a run still in progress (or crashed) has none and must not hide the last finished one.
+ * With `scenario`, the newest finished run of that scenario (the run id ends with the scenario name).
+ */
+export async function latestRunId(artifactsDir: string, scenario?: ScenarioName): Promise<string | undefined> {
   try {
-    const names = (await readdir(path.join(artifactsDir, "runs"))).filter((n) => RUN_ID.test(n));
+    const names = (await readdir(path.join(artifactsDir, "runs"))).filter((n) => RUN_ID.test(n) && (!scenario || n.endsWith(`Z-${scenario}`)));
     for (const name of names.sort().reverse()) { // ISO timestamp prefix sorts chronologically
       if (await exists(path.join(artifactsDir, "runs", name, "summary.json"))) return name;
     }

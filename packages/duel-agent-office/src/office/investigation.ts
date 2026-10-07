@@ -158,6 +158,85 @@ async function investigateDraw(question: string, a: ArtifactsData, reader: RepoR
   return { question, hypotheses, conclusion, sources };
 }
 
+const OUTCOME_QUESTION = /\b(won|win|wins|winner|lost|lose|loser|venceu|ganhou|perdeu|vencedor|derrota)\b/i;
+const ATTACKS = new Set(["Tiro", "Tiro Duplo"]);
+const DEFENCES = new Set(["Desvio", "Contra-golpe"]);
+
+/** "Who won and how": the result of each session, how each side played, and the last exchange. Facts first, no invented cause. */
+async function investigateOutcome(question: string, a: ArtifactsData, reader: RepoReader | undefined): Promise<Investigation> {
+  const result = record(record(a.summary).result);
+  const outcome = record(result.outcome);
+  const seqs = turnsFromEvents(a.eventLog ?? a.events);
+  const alpha = seqs["player-alpha"];
+  const bravo = seqs["player-bravo"];
+  const sources = [`run ${a.runId}: summary.json, events.jsonl (${a.totals.events} lines)`];
+  const outA = String(outcome.alpha ?? "unknown");
+  const outB = String(outcome.bravo ?? "unknown");
+  const winner = outA === "win" ? "Alpha" : outB === "win" ? "Bravo" : undefined;
+  const loser = winner === "Alpha" ? "Bravo" : winner === "Bravo" ? "Alpha" : undefined;
+  const consistent = (outA === "win" && outB === "loss") || (outA === "loss" && outB === "win");
+  const hypotheses: Hypothesis[] = [
+    {
+      id: "H1",
+      claim: "The two sessions disagree, so the result is not trustworthy",
+      status: consistent ? "refuted" : "unverified",
+      evidence: [`Alpha read "${outA}", Bravo read "${outB}" on their own game-over screens${consistent ? ": one win and one loss, they agree" : ""}.`],
+    },
+  ];
+  const stats = (cards: string[]) => ({ attacks: cards.filter((c) => ATTACKS.has(c)).length, defences: cards.filter((c) => DEFENCES.has(c)).length, reloads: cards.filter((c) => c === "Recarga").length });
+  const sa = stats(alpha);
+  const sb = stats(bravo);
+  const n = Math.min(alpha.length, bravo.length);
+  const same = n > 0 && alpha.slice(0, n).every((c, i) => c === bravo[i]);
+  hypotheses.push({
+    id: "H2",
+    claim: "The two players played different strategies",
+    status: n === 0 ? "unverified" : same ? "refuted" : "confirmed",
+    evidence:
+      n === 0
+        ? ["No per-turn events were found in the run."]
+        : [
+            `Alpha played: ${alpha.join(", ")}`,
+            `Bravo played: ${bravo.join(", ")}`,
+            `Alpha: ${sa.attacks} attack(s), ${sa.defences} defence(s), ${sa.reloads} reload(s). Bravo: ${sb.attacks} attack(s), ${sb.defences} defence(s), ${sb.reloads} reload(s).`,
+          ],
+  });
+  const lastA = alpha.at(-1);
+  const lastB = bravo.at(-1);
+  const h3: Hypothesis = { id: "H3", claim: "The last exchange decided the match", status: "unverified", evidence: [] };
+  if (lastA && lastB && winner) {
+    h3.evidence.push(`Last turn (${n}): Alpha played ${lastA}, Bravo played ${lastB}.`);
+    const loserCard = loser === "Alpha" ? lastA : lastB;
+    const winnerCard = winner === "Alpha" ? lastA : lastB;
+    const attackedIntoDefence = ATTACKS.has(loserCard) && DEFENCES.has(winnerCard);
+    if (reader) {
+      try {
+        const hits = await grepGame(reader, /(?:^|\/)gameEngine\.[tj]sx?$/i, /contra|counter|desvio|dodge|shield|\blives?\b.*(?:-=|--|- ?1)/i, 8);
+        sources.push(...[...new Set(hits.map((h) => `game code: ${h.file} (read-only)`))]);
+        h3.evidence.push(...hits.map(cite));
+        h3.status = attackedIntoDefence && hits.length ? "confirmed" : "unverified";
+        if (!hits.length) h3.evidence.push("No rule for these cards was found in the game files read.");
+      } catch {
+        h3.evidence.push("The game source could not be read.");
+      }
+    } else h3.evidence.push("No game source is connected (Connections), so the card rules were not read.");
+  } else h3.evidence.push("The last turn or the winner is missing from the run.");
+  hypotheses.push(h3);
+
+  let conclusion: string;
+  if (!winner || !loser) {
+    conclusion = `The run does not show one winner (Alpha "${outA}", Bravo "${outB}"), so the question does not apply to this run.`;
+  } else {
+    const [w, l] = winner === "Alpha" ? [sa, sb] : [sb, sa];
+    const how = n === 0 ? "" : ` ${winner} played ${w.attacks} attack(s), ${w.defences} defence(s) and ${w.reloads} reload(s); ${loser} played ${l.attacks}, ${l.defences} and ${l.reloads}.`;
+    const last = h3.status === "confirmed" ? ` On the last turn ${loser} attacked with ${loser === "Alpha" ? lastA : lastB} into ${winnerCard(winner, lastA, lastB)}, and the game code lines above show those cards' rules.` : "";
+    conclusion = `${winner} won and ${loser} lost.${how}${last} The run does not record lives or damage per turn, so the exact margin is not established; add a per-turn HUD capture to the runner to prove it.`;
+  }
+  return { question, hypotheses, conclusion, sources };
+}
+
+const winnerCard = (winner: string, a?: string, b?: string) => (winner === "Alpha" ? a : b) ?? "a defence";
+
 /** Generic fallback: states what the run shows and which game files mention the question's words. It never invents a cause. */
 async function investigateGeneric(question: string, a: ArtifactsData, reader: RepoReader | undefined): Promise<Investigation> {
   const result = record(record(a.summary).result);
@@ -166,10 +245,10 @@ async function investigateGeneric(question: string, a: ArtifactsData, reader: Re
     `Outcome: ${JSON.stringify(result.outcome ?? null)}; turns: ${JSON.stringify(result.turns ?? null)}`,
     `Observer: ${a.findings ? `${a.findings.runs.flatMap((r) => r.findings).length} finding(s)` : "no findings file"}`,
   ];
-  const words = [...new Set(question.toLowerCase().match(/[a-zà-ú]{5,}/g) ?? [])].filter((w) => !["there", "which", "should", "report", "check", "files", "understand", "because"].includes(w)).slice(0, 4);
+  const words = [...new Set(question.toLowerCase().match(/[a-zà-ú]{5,}/g) ?? [])].filter((w) => !["there", "which", "should", "report", "check", "files", "understand", "because", "players", "player", "match", "happened", "tests"].includes(w)).slice(0, 4);
   if (reader && words.length) {
     try {
-      const hits = await grepGame(reader, /\.(?:[tj]sx?|md)$/i, new RegExp(words.map((w) => w.replace(/[^a-zà-ú]/g, "")).join("|"), "i"), 5);
+      const hits = await grepGame(reader, /^(?!\.github\/|docs\/|node_modules\/).*\.(?:[tj]sx?)$/i, new RegExp(words.map((w) => w.replace(/[^a-zà-ú]/g, "")).join("|"), "i"), 5);
       sources.push(...[...new Set(hits.map((h) => `game code: ${h.file} (read-only)`))]);
       evidence.push(...hits.map(cite));
     } catch {
@@ -186,7 +265,8 @@ async function investigateGeneric(question: string, a: ArtifactsData, reader: Re
 
 export async function investigate(taskTitle: string, a: ArtifactsData, reader?: RepoReader): Promise<Investigation> {
   const question = questionOf(taskTitle);
-  return DRAW_QUESTION.test(question) ? investigateDraw(question, a, reader) : investigateGeneric(question, a, reader);
+  if (DRAW_QUESTION.test(question)) return investigateDraw(question, a, reader);
+  return OUTCOME_QUESTION.test(question) ? investigateOutcome(question, a, reader) : investigateGeneric(question, a, reader);
 }
 
 export function renderInvestigation(i: Investigation): string {
