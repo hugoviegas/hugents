@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { loadObserverConfig, ObserverConfigError } from "./observer/config.js";
 import { startDashboard } from "./observer/dashboard.js";
 import { createOfficeHub, OfficeHubConfigError } from "./office/hub.js";
+import { fileLayoutStore } from "./office/layout.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -27,7 +28,8 @@ async function main(): Promise<void> {
     console.error(error instanceof OfficeHubConfigError ? error.message : "Invalid office configuration");
     process.exit(64);
   }
-  const { port } = await startDashboard(config, office);
+  const layout = fileLayoutStore({ file: path.join(config.artifactsDir, "office", "layout.json"), readonly: process.env.OFFICE_READONLY === "true" });
+  const { port } = await startDashboard(config, office, layout);
   const host = config.host.includes(":") ? `[${config.host}]` : config.host;
   console.log(`Agent Office (local only): http://${host}:${port}/  - Ctrl+C to stop`);
 }

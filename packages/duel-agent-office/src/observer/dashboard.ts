@@ -9,14 +9,17 @@ import { playerLabel } from "./analyze.js";
 import type { AgentName } from "../orchestrator/eventBus.js";
 import type { FindingsReport } from "./schema.js";
 import type { OfficeHub, OfficeView } from "../office/hub.js";
+import { DEFAULT_LAYOUT, type LayoutStore, type OfficeLayout } from "../office/layout.js";
 
 /** What the browser receives. Built field by field from sanitized data: never raw JSON, paths or URLs. */
 export interface DashboardState {
   generatedAt: string;
-  /** Who sits at which desk of the office view. Static structure, sent with the data so the page hardcodes no agents. */
+  /** The office agents and how each looks. Static structure, sent with the data so the page hardcodes no agents. */
   agents: typeof ROSTER;
   /** Live office from the bridge: task board, events, busy flags. Null when the dashboard runs without the office. */
   office: OfficeView | null;
+  /** Where the props stand and which agent uses which desk (visual only). */
+  layout: OfficeLayout;
   totals: FindingsReport["totals"];
   repeated: FindingsReport["repeated"];
   runs: {
@@ -33,12 +36,15 @@ export interface DashboardState {
   }[];
 }
 
-/** The four office agents (bridge ids), in roster order, and the desk each one uses in the QA bullpen. */
+/**
+ * The four office agents (bridge ids) in roster order. `look` picks the identity colour and the character sprite;
+ * which desk an agent uses comes from the layout.
+ */
 const ROSTER = [
-  { id: "player-alpha", name: "Player Alpha", role: "Plays the private match against Player Bravo", desk: 1 },
-  { id: "explorer", name: "Explorer", role: "Walks the screens and captures them", desk: 2 },
-  { id: "qa-analyst", name: "QA Analyst", role: "Reads run artifacts and writes findings", desk: 3 },
-  { id: "design-critic", name: "Design Critic", role: "Checks the UI against the design system", desk: 4 },
+  { id: "player-alpha", name: "Player Alpha", role: "Plays the private match against Player Bravo", look: 1 },
+  { id: "explorer", name: "Explorer", role: "Walks the screens and captures them", look: 2 },
+  { id: "qa-analyst", name: "QA Analyst", role: "Reads run artifacts and writes findings", look: 3 },
+  { id: "design-critic", name: "Design Critic", role: "Checks the UI against the design system", look: 4 },
 ] as const;
 
 /** Office data as the page gets it: every free-text field sanitized again, report paths reduced to their file name. */
@@ -59,7 +65,13 @@ export function sanitizeOfficeView(view: OfficeView): OfficeView {
 
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/;
 
-export function buildDashboardState(scanned: readonly ScannedRun[], config: ObserverConfig, now: Date, office: OfficeView | null = null): DashboardState {
+export function buildDashboardState(
+  scanned: readonly ScannedRun[],
+  config: ObserverConfig,
+  now: Date,
+  office: OfficeView | null = null,
+  layout: OfficeLayout = DEFAULT_LAYOUT,
+): DashboardState {
   const report = buildReport(
     scanned.map((s) => s.report),
     "root",
@@ -71,6 +83,7 @@ export function buildDashboardState(scanned: readonly ScannedRun[], config: Obse
     generatedAt: report.generatedAt,
     agents: ROSTER,
     office: office ? sanitizeOfficeView(office) : null,
+    layout,
     totals: report.totals,
     repeated: report.repeated.map((r) => ({ ...r, message: sanitizeText(r.message) })),
     // Newest first.
@@ -125,7 +138,8 @@ function hostAllowed(req: IncomingMessage, port: number): boolean {
   return [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`].includes(host);
 }
 
-const MAX_POST_BYTES = 4_000;
+// A full layout (40 props) stays well under this.
+const MAX_POST_BYTES = 8_000;
 
 function readBody(req: IncomingMessage): Promise<string | undefined> {
   return new Promise((resolve) => {
@@ -155,14 +169,23 @@ function sameOrigin(req: IncomingMessage): boolean {
 }
 
 /** Creates (does not start) the dashboard server. Starting is an explicit act of `startDashboard`. */
-export function createDashboardServer(config: ObserverConfig, now: () => Date = () => new Date(), office?: OfficeHub): Server {
+export function createDashboardServer(config: ObserverConfig, now: () => Date = () => new Date(), office?: OfficeHub, layout?: LayoutStore): Server {
   let port = config.port;
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
-      if (req.method === "POST" && url.pathname === "/api/tasks" && office) {
-        if (!hostAllowed(req, port)) return send(res, 403, "text/plain", "Forbidden");
-        if (!sameOrigin(req)) return send(res, 403, "text/plain", "Forbidden");
+      const postHandler =
+        url.pathname === "/api/tasks" && office
+          ? async (input: unknown) => {
+              const result = await office.assign(input);
+              const task = result.body.task;
+              return { status: result.status, body: task ? { task: sanitizeOfficeView({ connected: true, readonly: false, agents: [], tasks: [task], events: [] }).tasks[0] } : result.body };
+            }
+          : url.pathname === "/api/layout" && layout
+            ? (input: unknown) => layout.save(input)
+            : undefined;
+      if (req.method === "POST" && postHandler) {
+        if (!hostAllowed(req, port) || !sameOrigin(req)) return send(res, 403, "text/plain", "Forbidden");
         if (!(req.headers["content-type"] ?? "").startsWith("application/json")) return send(res, 415, "text/plain", "application/json required");
         const raw = await readBody(req);
         let input: unknown;
@@ -172,9 +195,8 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
           input = undefined;
         }
         if (input === undefined) return send(res, 400, "application/json; charset=utf-8", JSON.stringify({ error: "Invalid request" }));
-        const result = await office.assign(input);
-        const body = result.body.task ? { task: sanitizeOfficeView({ connected: true, readonly: false, agents: [], tasks: [result.body.task], events: [] }).tasks[0] } : result.body;
-        return send(res, result.status, "application/json; charset=utf-8", JSON.stringify(body));
+        const result = await postHandler(input);
+        return send(res, result.status, "application/json; charset=utf-8", JSON.stringify(result.body));
       }
       if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "text/plain", "Method not allowed");
       if (!hostAllowed(req, port)) return send(res, 403, "text/plain", "Forbidden");
@@ -185,7 +207,8 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
         const when = now();
         const scanned = await scanArtifactRoot(config, when);
         const officeView = office ? await office.view() : null;
-        return send(res, 200, "application/json; charset=utf-8", JSON.stringify(buildDashboardState(scanned, config, when, officeView)));
+        const currentLayout = layout ? await layout.get() : DEFAULT_LAYOUT;
+        return send(res, 200, "application/json; charset=utf-8", JSON.stringify(buildDashboardState(scanned, config, when, officeView, currentLayout)));
       }
       const shot = /^\/shot\/([^/]+)\/(\d{1,3})$/.exec(url.pathname);
       if (shot && RUN_NAME.test(shot[1] as string)) {
@@ -207,8 +230,8 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
 }
 
 /** Explicit start. Binds to the configured loopback host only. */
-export async function startDashboard(config: ObserverConfig, office?: OfficeHub): Promise<{ server: Server; port: number }> {
-  const server = createDashboardServer(config, undefined, office);
+export async function startDashboard(config: ObserverConfig, office?: OfficeHub, layout?: LayoutStore): Promise<{ server: Server; port: number }> {
+  const server = createDashboardServer(config, undefined, office, layout);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(config.port, config.host, resolve);

@@ -93,7 +93,9 @@ describe("dashboard page (Agent Office design)", () => {
     const page = (await get(started.port, "/")).body.toString();
     const css = (await get(started.port, "/app.css")).body.toString();
     expect(page).toContain("<title>Agent Office</title>");
-    for (const desk of [1, 2, 3, 4]) expect(page).toContain(`data-desk="${desk}"`);
+    // The room shell plus the layers the page fills from the layout, and one sprite per prop type and character.
+    for (const id of ["world-svg", "props", "grid", "ghost", "sprites"]) expect(page).toContain(`id="${id}"`);
+    for (const sprite of ["desk", "plant", "cabinet", "bookshelf", "rug", "char-1", "char-2", "char-3", "char-4"]) expect(page).toContain(`data-sprite="${sprite}"`);
     // CSP is style-src 'self': inline style attributes would be dropped by the browser.
     expect(page).not.toMatch(/\sstyle=/);
     expect(css).toContain('[data-theme="night"]');
