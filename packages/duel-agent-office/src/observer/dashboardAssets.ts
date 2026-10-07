@@ -1,6 +1,6 @@
 /**
  * Static dashboard files, in the Agent Office design system (Claude Design): tokens from `src/theme`, the
- * "Live office" layout and the QA bullpen world. No external resources (the CSP allows none, so the design
+ * "Live office" layout and the QA bullpen world, wired to the office bridge (task board, live agents). No external resources (the CSP allows none, so the design
  * fonts fall back to the system stacks unless installed locally); all dynamic text is set with textContent.
  */
 import { ICONS } from "../theme/icons.js";
@@ -27,6 +27,7 @@ export const INDEX_HTML = `<!doctype html>
 <div class="brand"><span class="eyebrow">Big Bang Duel</span><h1 class="title">Agent Office</h1></div>
 <div class="modebar"><span id="mode-chip" class="badge m-live"></span><span id="meta" class="meta">Loading…</span></div>
 <nav aria-label="Views" class="nav">
+<a class="btn" href="#tasks">Tasks</a>
 <a class="btn" href="#findings">Findings <span id="nav-count" class="count">0</span></a>
 <a class="btn" href="#runs">Runs</a>
 <label class="theme-pick">Theme <select id="theme">${THEME_OPTIONS}</select></label>
@@ -57,6 +58,10 @@ ${WORLD_SVG}
 <aside id="detail" class="panel detail" aria-label="Selected agent"></aside>
 </main>
 <div class="lower">
+<section id="tasks" class="panel" aria-labelledby="tasks-h">
+<div class="panel-head"><h2 id="tasks-h" class="room-title">Task board</h2><span id="tasks-sub" class="caption"></span></div>
+<div id="task-list"></div>
+</section>
 <section id="findings" class="panel" aria-labelledby="findings-h">
 <div class="panel-head"><h2 id="findings-h" class="room-title">Findings</h2><span id="findings-sub" class="caption"></span></div>
 <div id="findings-list"></div>
@@ -70,6 +75,7 @@ ${WORLD_SVG}
 <section id="runs" class="panel" aria-labelledby="runs-h">
 <div class="panel-head"><h2 id="runs-h" class="room-title">Runs</h2><span id="totals" class="caption"></span></div>
 <div id="run-list" class="run-list"></div>
+<div id="run-players" class="block"></div>
 </section>
 </div>
 </div>
@@ -148,7 +154,7 @@ ${STATES.map((s) => `.badge.s-${s}{--c:var(--state-${s})}`).join("\n")}
 .activity{font:var(--type-label);font-weight:400;color:var(--text-muted);overflow-wrap:anywhere}
 .agent[aria-pressed="true"] .activity{color:var(--text-primary)}
 .swatch{flex:none;width:10px;height:10px;outline:1px solid var(--outline);background:var(--c)}
-.id-1{--c:var(--agent-alpha)}.id-2{--c:var(--agent-bravo)}.id-3{--c:var(--agent-report)}.id-4{--c:var(--agent-runner)}
+.id-1{--c:var(--agent-alpha)}.id-2{--c:var(--agent-explorer)}.id-3{--c:var(--agent-analyst)}.id-4{--c:var(--agent-critic)}
 
 .office{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;background:color-mix(in srgb,var(--outline),var(--bg) 15%);border:1px solid var(--panel-border);border-radius:var(--radius-lg);overflow:hidden}
 .office-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) var(--space-4);flex-wrap:wrap}
@@ -177,9 +183,9 @@ ${STATES.map((s) => `.badge.s-${s}{--c:var(--state-${s})}`).join("\n")}
 .world [fill="#F2E6CF"]{fill:var(--evidence-frame)}
 .world [stroke="#120C08"]{stroke:var(--outline)}
 .world .char [fill="#E8735C"]{fill:var(--agent-alpha)}
-.world .char [fill="#9BC25A"]{fill:var(--agent-bravo)}
-.world .char [fill="#6FA8F0"]{fill:var(--agent-report)}
-.world .char [fill="#E58AC0"]{fill:var(--agent-runner)}
+.world .char [fill="#9BC25A"]{fill:var(--agent-explorer)}
+.world .char [fill="#6FA8F0"]{fill:var(--agent-analyst)}
+.world .char [fill="#E58AC0"]{fill:var(--agent-critic)}
 
 .world .glow,.world .lamp,.world .screen,.world .papers,.world .sel{display:none}
 .world[data-mode="empty"] .char{display:none}
@@ -237,6 +243,23 @@ ${STATES.map((s) => `.tag[data-state="${s}"]{--sc:var(--state-${s})}`).join("\n"
 .run .frow{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
 .run .id{font:var(--type-code);overflow-wrap:anywhere}
 .empty{color:var(--text-muted)}
+.banner .btn{min-height:32px;margin-left:auto}
+.assign{display:flex;flex-direction:column;gap:var(--space-2)}
+.field{width:100%;min-height:44px;padding:10px 12px;background:var(--bg);color:var(--text-primary);border:1px solid var(--panel-border);border-radius:var(--radius-md);font:var(--type-body);resize:vertical}
+.field:disabled{opacity:.6}
+.assign-row{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap}
+.btn-primary{background:var(--accent-primary);border-color:var(--accent-primary);color:var(--on-fill);box-shadow:var(--shadow-pixel)}
+.btn-primary:hover{border-color:var(--accent-primary)}
+.btn:disabled{opacity:.5;cursor:not-allowed;border-style:dashed}
+.form-note{font:var(--type-caption);color:var(--text-muted)}
+.form-note.err{color:var(--failed)}
+.tasks{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:1px;background:var(--panel-raised);border:1px solid var(--panel-raised);border-radius:var(--radius-md);overflow:hidden}
+.tasks li{display:flex;flex-direction:column;gap:4px;padding:10px 12px;background:var(--panel-bg)}
+.tasks .frow{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+.tasks .ttl{font:var(--type-body-strong);overflow-wrap:anywhere}
+.tasks .sum{font:var(--type-label);font-weight:400;color:var(--text-secondary);overflow-wrap:anywhere}
+.players{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.players li{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;font:var(--type-label);font-weight:400;color:var(--text-secondary)}
 
 @media (max-width:640px){.topbar,.main{padding-left:var(--space-4);padding-right:var(--space-4)}.lower{padding-left:var(--space-4);padding-right:var(--space-4)}.world-wrap{padding:0 var(--space-2)}.nav{margin-left:0}.world .tag,.world .sign{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -248,8 +271,8 @@ export const APP_JS = `
 "use strict";
 const $ = (id) => document.getElementById(id);
 const STATES = ${JSON.stringify(STATES)};
-const WORDS = { idle: "Idle", planning: "Planning", working: "Working", waiting: "Waiting", reviewing: "Reviewing", blocked: "Blocked", completed: "Completed", failed: "Failed", offline: "Offline", active: "Active" };
-const view = { data: null, raw: "", runId: null, agent: null, offline: false, lastStates: {} };
+const WORDS = { queued: "Queued", idle: "Idle", planning: "Planning", working: "Working", waiting: "Waiting", reviewing: "Reviewing", blocked: "Blocked", completed: "Completed", failed: "Failed", offline: "Offline", active: "Active" };
+const view = { data: null, raw: "", runId: null, agent: null, offline: false, lastStates: {}, drafts: {}, notes: {}, sending: false };
 const roster = () => (view.data && Array.isArray(view.data.agents) ? view.data.agents : []);
 
 function el(tag, props, ...kids) {
@@ -284,30 +307,50 @@ function currentRun() {
   const runs = view.data ? view.data.runs : [];
   return runs.find((r) => r.runId === view.runId) || runs[0] || null;
 }
-function agentFacts(run) {
+const office = () => (view.data && view.data.office) || null;
+const bridgeUp = () => !view.offline && !!office() && office().connected;
+const taskState = (t) => (t.status === "queued" ? "waiting" : safeState(t.status));
+function agentFacts() {
+  const o = office();
   return roster().map((a) => {
-    if (!run) return { ...a, state: view.offline ? "offline" : "idle", activity: "No event yet.", at: null };
-    if (a.id === "report") {
-      const n = run.findings.length;
-      return { ...a, state: view.offline ? "offline" : "completed", activity: n ? n + (n === 1 ? " finding" : " findings") + " in this run." : "No findings in this run.", at: run.finishedAt || run.startedAt || null };
-    }
-    const p = run.players.find((x) => x.player === a.id);
-    if (!p) return { ...a, state: view.offline ? "offline" : "idle", activity: "No event yet.", at: null };
-    return { ...a, state: view.offline ? "offline" : safeState(p.status), activity: p.activity, at: p.at || null, known: safeState(p.status) };
+    const tasks = o ? o.tasks.filter((t) => t.agentId === a.id) : [];
+    const task = tasks[0] || null;
+    const events = o ? o.events.filter((e) => e.agentId === a.id) : [];
+    const bridge = o ? o.agents.find((x) => x.id === a.id) : null;
+    const known = task ? taskState(task) : "idle";
+    const live = task && (task.status === "queued" || task.status === "working");
+    return {
+      ...a, task, tasks, events, known,
+      metrics: bridge && bridge.metrics ? bridge.metrics : null,
+      busy: !!(bridge && bridge.busy) || !!live,
+      state: bridgeUp() ? known : "offline",
+      activity: task ? task.activity : "No task. Waiting for the next event.",
+      at: events[0] ? events[0].at : task ? task.updatedAt : null,
+    };
   });
 }
 
 function renderTop(run) {
+  const up = bridgeUp();
   const chip = $("mode-chip");
-  chip.replaceChildren(icon(view.offline ? "offline" : "live", 12), view.offline ? "Offline" : "Live");
-  chip.className = "badge " + (view.offline ? "m-offline" : "m-live");
+  chip.replaceChildren(icon(up ? "live" : "offline", 12), up ? "Live" : "Offline");
+  chip.className = "badge " + (up ? "m-live" : "m-offline");
   const banner = $("banner");
-  if (view.offline) {
-    banner.replaceChildren(icon("offline", 14), el("span", null, el("strong", null, "Offline. "), "The dashboard server is not reachable. Activity is unknown, not idle."));
+  if (!up) {
+    const retry = el("button", { type: "button", class: "btn" }, "Retry");
+    retry.addEventListener("click", () => tick());
+    const why = view.offline
+      ? "The Agent Office server is not reachable."
+      : office() ? "Start the office with npm run office:start." : "This view was started without the office.";
+    banner.replaceChildren(icon("offline", 14), el("span", null, el("strong", null, "Bridge offline. "), "Activity is unknown, not idle. " + why), retry);
     banner.hidden = false;
   } else banner.hidden = true;
   if (view.data) {
-    $("meta").textContent = (view.offline ? "Last known " : "Local view, refreshed ") + fmtTime(view.data.generatedAt) + ". Observations, not confirmed bugs.";
+    const o = office();
+    const last = o && o.events[0] ? o.events[0].at : null;
+    $("meta").textContent = up
+      ? "Bridge connected" + (last ? " · last event " + fmtTime(last) : " · no event yet")
+      : "Last known " + fmtTime(view.data.generatedAt) + ".";
   }
   $("nav-count").textContent = String(run ? run.findings.length : 0);
 }
@@ -326,7 +369,7 @@ function renderRoster(facts) {
 
 function renderWorld(run, facts) {
   const world = $("world");
-  world.dataset.mode = view.offline ? "offline" : run ? "live" : "empty";
+  world.dataset.mode = bridgeUp() ? "live" : office() || view.offline ? "offline" : "empty";
   for (const f of facts) {
     const desk = world.querySelector('[data-desk="' + f.desk + '"]');
     if (desk) { desk.setAttribute("data-state", f.state); desk.setAttribute("data-selected", String(f.id === view.agent)); }
@@ -337,39 +380,90 @@ function renderWorld(run, facts) {
       tag.replaceChildren(el("span", { class: "swatch id-" + f.desk }), f.name.length > 12 ? f.name.slice(0, 11) + "…" : f.name, icon(f.state, 12));
     }
   }
-  $("world-svg").setAttribute("aria-label", run
-    ? "The QA bullpen. " + facts.map((f) => f.name + " is " + (WORDS[f.state] || f.state).toLowerCase()).join(", ") + "."
-    : "The QA bullpen with four empty desks. Lamps and monitors are off.");
-  $("world-note").textContent = run ? "Lamps and monitors light only for open events." : "No run yet. Lamps and monitors stay off until a run writes artifacts.";
-  $("office-run").textContent = run ? (run.scenario || "run") + " · " + fmtTime(run.startedAt) : "";
+  $("world-svg").setAttribute("aria-label", "The QA bullpen. " + facts.map((f) => f.name + " is " + (WORDS[f.state] || f.state).toLowerCase()).join(", ") + ".");
+  $("world-note").textContent = bridgeUp()
+    ? (facts.some((f) => f.task) ? "Lamps and monitors light only for open tasks." : "Desks lit by real work. Assign a task to start.")
+    : "Bridge offline: lamps are off because activity is unknown.";
+  $("office-run").textContent = run ? "Latest run: " + (run.scenario || "run") + " · " + fmtTime(run.startedAt) : "";
+}
+
+function assignForm(f) {
+  const o = office();
+  const readonly = !!(o && o.readonly);
+  const blocked = readonly ? "The office is read-only." : !bridgeUp() ? "Start the bridge to assign tasks." : f.busy ? f.name + " is working. Wait for the task to finish." : "";
+  const input = el("textarea", { id: "task-title", class: "field", rows: "2", maxlength: "200", "data-key": "task-title", placeholder: "Describe the task, for example: Check the Missions screen" });
+  input.value = view.drafts[f.id] || "";
+  input.addEventListener("input", () => { view.drafts[f.id] = input.value; });
+  const button = el("button", { type: "submit", class: "btn btn-primary", "data-key": "task-send" }, "Assign to " + f.name);
+  if (blocked || view.sending) { input.disabled = blocked !== ""; button.disabled = true; }
+  const note = view.notes[f.id];
+  const form = el("form", { class: "assign", "aria-label": "Assign a task to " + f.name },
+    el("label", { class: "label", for: "task-title" }, "Assign a task"), input,
+    el("div", { class: "assign-row" }, button, el("span", { class: "form-note" + (note && note.err ? " err" : ""), role: "status" }, blocked || (note ? note.text : ""))));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const title = input.value.trim();
+    if (!title || view.sending) return;
+    view.sending = true;
+    view.notes[f.id] = { text: "Sending…" };
+    render();
+    try {
+      const r = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentId: f.id, title }) });
+      const body = await r.json().catch(() => ({}));
+      if (r.ok) { view.drafts[f.id] = ""; view.notes[f.id] = { text: "Task assigned." }; }
+      else view.notes[f.id] = { text: body.error || "The task was not assigned.", err: true };
+    } catch {
+      view.notes[f.id] = { text: "The Agent Office server is not reachable.", err: true };
+    }
+    view.sending = false;
+    await tick(true);
+  });
+  return form;
+}
+
+function taskItem(t, withAgent) {
+  const who = withAgent ? roster().find((a) => a.id === t.agentId) : null;
+  return el("li", null,
+    el("span", { class: "frow" }, badge("s", taskState(t), t.status === "queued" ? WORDS.queued : null),
+      who ? el("span", { class: "swatch id-" + who.desk }) : null, who ? el("span", { class: "label" }, who.name) : null,
+      el("span", { class: "ts" }, fmtTime(t.updatedAt))),
+    el("span", { class: "ttl" }, t.title),
+    el("span", { class: "sum" }, t.summary || t.activity),
+    t.reportPath || t.runId ? el("span", { class: "mono" }, [t.reportPath ? "Report " + t.reportPath : null, t.runId ? "Run " + t.runId : null, t.usedFallback ? "template text" : null].filter(Boolean).join(" · ")) : null);
 }
 
 function renderDetail(run, facts) {
   const f = facts.find((x) => x.id === view.agent) || facts[0];
   if (!f) { $("detail").replaceChildren(el("p", { class: "empty" }, view.offline ? "Activity is unknown." : "Loading…")); return; }
-  const mine = run ? run.findings.filter((x) => f.id === "report" || x.player === f.id) : [];
   const head = el("div", { class: "detail-head" },
     el("div", { class: "agent-row" }, el("span", { class: "swatch id-" + f.desk }), el("h2", { class: "room-title" }, f.name), badge("s", f.state)),
-    el("span", { class: "role" }, f.role));
-  const latest = el("div", { class: "block" }, el("h3", { class: "label" }, view.offline ? "Last known event" : "Latest event"),
-    el("p", null, f.activity), f.at ? el("span", { class: "ts" }, fmtTime(f.at)) : null);
-  const list = el("ul", { class: "flist" });
-  for (const x of mine.slice(0, 5)) list.append(el("li", null, el("span", { class: "frow" }, badge("sev", x.severity), el("span", { class: "rule" }, x.ruleId), x.count > 1 ? el("span", { class: "mono" }, "×" + x.count) : null), el("span", { class: "msg" }, x.message)));
-  const findings = el("div", { class: "block" }, el("h3", { class: "label" }, f.id === "report" ? "Findings in this run" : "Findings for " + f.name),
-    mine.length ? list : el("p", { class: "empty" }, "No findings yet. When the observer reports one, it appears here."),
-    mine.length > 5 ? el("a", { href: "#findings" }, "+" + (mine.length - 5) + " more") : null);
-  const log = el("div", { class: "screenlog", "aria-label": "Latest event per agent" });
-  for (const x of facts) log.append(el("span", null, el("span", { class: "t" }, (x.at ? fmtTime(x.at).slice(0, 8) : "--:--:--") + " "), x.id + "." + (x.known || x.state) + " " + x.activity));
-  const runBlock = el("div", { class: "block" }, el("h3", { class: "label" }, "Run"));
-  if (run) {
-    runBlock.append(el("dl", { class: "facts" },
-      el("dt", null, "Status"), el("dd", null, badge("s", run.status)),
-      el("dt", null, "Scenario"), el("dd", null, run.scenario || "unknown"),
-      el("dt", null, "Started"), el("dd", { class: "ts" }, fmtTime(run.startedAt) || "unknown"),
-      el("dt", null, "Duration"), el("dd", null, fmtDuration(run.durationMs) || "unknown"),
-      el("dt", null, "Ignored network failures"), el("dd", null, String(run.ignoredNetworkFailures))));
-  } else runBlock.append(el("p", { class: "empty" }, "No run yet."));
-  $("detail").replaceChildren(head, latest, findings, el("div", { class: "block" }, el("h3", { class: "label" }, "Event log"), log), runBlock);
+    el("span", { class: "role" }, f.role + " · Desk " + f.desk));
+  const current = el("div", { class: "block" }, el("h3", { class: "label" }, bridgeUp() ? "Current task" : "Last known task"));
+  if (f.task) current.append(el("p", null, f.task.title), el("p", { class: "activity" }, f.activity), el("span", { class: "ts" }, "Started " + fmtTime(f.task.createdAt)));
+  else current.append(el("p", { class: "empty" }, "No task. Waiting for the next event."));
+  const log = el("div", { class: "screenlog", "aria-label": "Latest events for " + f.name });
+  if (f.events.length) for (const e of f.events.slice(0, 5)) log.append(el("span", null, el("span", { class: "t" }, (fmtTime(e.at).slice(0, 8) || "--:--:--") + " "), (e.tool ? e.tool + " " : "") + e.activity));
+  else log.append(el("span", null, el("span", { class: "t" }, "--:--:-- "), "No event yet."));
+  const earlier = f.tasks.slice(1, 4);
+  const history = el("div", { class: "block" }, el("h3", { class: "label" }, "Earlier tasks"),
+    earlier.length ? el("ul", { class: "tasks" }, ...earlier.map((t) => taskItem(t, false))) : el("p", { class: "empty" }, "None yet."));
+  const m = f.metrics;
+  const stats = m ? el("dl", { class: "facts" },
+    el("dt", null, "Completed"), el("dd", null, String(m.tasksCompleted)),
+    el("dt", null, "Blocked"), el("dd", null, String(m.tasksBlocked)),
+    el("dt", null, "Reputation"), el("dd", null, Math.round(m.reputation * 100) + "%")) : null;
+  const parts = [head, current, assignForm(f), el("div", { class: "block" }, el("h3", { class: "label" }, "Event log"), log), history];
+  if (stats) parts.push(el("div", { class: "block" }, el("h3", { class: "label" }, "Record"), stats));
+  $("detail").replaceChildren(...parts);
+}
+
+function renderTasks() {
+  const o = office();
+  const tasks = o ? o.tasks : [];
+  $("tasks-sub").textContent = tasks.length ? tasks.length + (tasks.length === 1 ? " task" : " tasks") : "";
+  $("task-list").replaceChildren(tasks.length
+    ? el("ul", { class: "tasks" }, ...tasks.slice(0, 12).map((t) => taskItem(t, true)))
+    : el("p", { class: "empty" }, "No tasks yet. Pick an agent and assign one."));
 }
 
 function renderLower(run) {
@@ -397,6 +491,8 @@ function renderLower(run) {
     for (const r of view.data.repeated) ul.append(el("li", null, el("span", { class: "frow" }, badge("sev", r.severity), el("span", { class: "rule" }, r.ruleId), el("span", { class: "mono" }, r.runs + " runs · " + r.occurrences + " occurrences")), el("span", { class: "msg" }, r.message)));
     rep.replaceChildren(ul);
   }
+  const players = $("run-players");
+  if (players) players.replaceChildren(...(run && run.players.length ? [el("h3", { class: "label" }, "Players in " + (run.scenario || "this run")), el("ul", { class: "players" }, ...run.players.map((p) => el("li", null, badge("s", safeState(p.status)), el("strong", null, p.player), p.activity)))] : []));
   const t = view.data ? view.data.totals : null;
   $("totals").textContent = t ? t.runs + " runs · " + t.findings + " findings" : "";
   const list = $("run-list");
@@ -418,17 +514,23 @@ function announce(facts) {
 }
 
 function render() {
-  const focused = document.activeElement && document.activeElement.getAttribute("data-key");
+  const active = document.activeElement;
+  const focused = active && active.getAttribute("data-key");
+  const caret = active && typeof active.selectionStart === "number" ? [active.selectionStart, active.selectionEnd] : null;
   const run = currentRun();
-  const facts = agentFacts(run);
+  const facts = agentFacts();
   if (!view.agent && facts[0]) view.agent = facts[0].id;
   renderTop(run);
   renderRoster(facts);
   renderWorld(run, facts);
   renderDetail(run, facts);
+  renderTasks();
   renderLower(run);
   announce(facts);
-  if (focused) { const again = document.querySelector('[data-key="' + focused + '"]'); if (again) again.focus(); }
+  if (focused) {
+    const again = document.querySelector('[data-key="' + focused + '"]');
+    if (again) { again.focus(); if (caret && typeof again.setSelectionRange === "function") again.setSelectionRange(caret[0], caret[1]); }
+  }
 }
 
 function initTheme() {
@@ -443,14 +545,14 @@ function initTheme() {
   });
 }
 
-async function tick() {
+async function tick(force) {
   try {
     const r = await fetch("/api/state", { cache: "no-store" });
     if (!r.ok) throw new Error("status " + r.status);
     const text = await r.text();
     const wasOffline = view.offline;
     view.offline = false;
-    if (text === view.raw && !wasOffline) return;
+    if (text === view.raw && !wasOffline && !force) return;
     view.raw = text;
     view.data = JSON.parse(text);
   } catch {
@@ -461,5 +563,5 @@ async function tick() {
 }
 initTheme();
 render();
-tick(); setInterval(tick, 5000);
+tick(); setInterval(tick, 3000);
 `;

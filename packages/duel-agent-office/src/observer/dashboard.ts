@@ -8,12 +8,15 @@ import { sanitizeText } from "./sanitize.js";
 import { playerLabel } from "./analyze.js";
 import type { AgentName } from "../orchestrator/eventBus.js";
 import type { FindingsReport } from "./schema.js";
+import type { OfficeHub, OfficeView } from "../office/hub.js";
 
 /** What the browser receives. Built field by field from sanitized data: never raw JSON, paths or URLs. */
 export interface DashboardState {
   generatedAt: string;
   /** Who sits at which desk of the office view. Static structure, sent with the data so the page hardcodes no agents. */
   agents: typeof ROSTER;
+  /** Live office from the bridge: task board, events, busy flags. Null when the dashboard runs without the office. */
+  office: OfficeView | null;
   totals: FindingsReport["totals"];
   repeated: FindingsReport["repeated"];
   runs: {
@@ -30,17 +33,33 @@ export interface DashboardState {
   }[];
 }
 
-/** The runner's agents (by observer player label) plus the observer's own desk, in roster order. */
+/** The four office agents (bridge ids), in roster order, and the desk each one uses in the QA bullpen. */
 const ROSTER = [
-  { id: "alpha", name: "Player Alpha", role: "Creates the private room and plays", desk: 1 },
-  { id: "bravo", name: "Player Bravo", role: "Joins the room and plays", desk: 2 },
-  { id: "runner", name: "Runner", role: "Opens both browsers and drives the scenario", desk: 4 },
-  { id: "report", name: "QA Observer", role: "Reads run artifacts and writes findings", desk: 3 },
+  { id: "player-alpha", name: "Player Alpha", role: "Plays the private match against Player Bravo", desk: 1 },
+  { id: "explorer", name: "Explorer", role: "Walks the screens and captures them", desk: 2 },
+  { id: "qa-analyst", name: "QA Analyst", role: "Reads run artifacts and writes findings", desk: 3 },
+  { id: "design-critic", name: "Design Critic", role: "Checks the UI against the design system", desk: 4 },
 ] as const;
+
+/** Office data as the page gets it: every free-text field sanitized again, report paths reduced to their file name. */
+export function sanitizeOfficeView(view: OfficeView): OfficeView {
+  return {
+    ...view,
+    tasks: view.tasks.map((t) => ({
+      ...t,
+      title: sanitizeText(t.title, 200),
+      activity: sanitizeText(t.activity, 160),
+      ...(t.summary !== undefined ? { summary: sanitizeText(t.summary, 400) } : {}),
+      ...(t.reportPath !== undefined ? { reportPath: sanitizeText(t.reportPath.split(/[\\/]/).pop() ?? "", 120) } : {}),
+      ...(t.runId !== undefined ? { runId: RUN_NAME.test(t.runId) ? t.runId : "run" } : {}),
+    })),
+    events: view.events.map((e) => ({ ...e, activity: sanitizeText(e.activity, 160), at: ISO_TIME.test(e.at) ? e.at : "" })),
+  };
+}
 
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/;
 
-export function buildDashboardState(scanned: readonly ScannedRun[], config: ObserverConfig, now: Date): DashboardState {
+export function buildDashboardState(scanned: readonly ScannedRun[], config: ObserverConfig, now: Date, office: OfficeView | null = null): DashboardState {
   const report = buildReport(
     scanned.map((s) => s.report),
     "root",
@@ -51,6 +70,7 @@ export function buildDashboardState(scanned: readonly ScannedRun[], config: Obse
   return {
     generatedAt: report.generatedAt,
     agents: ROSTER,
+    office: office ? sanitizeOfficeView(office) : null,
     totals: report.totals,
     repeated: report.repeated.map((r) => ({ ...r, message: sanitizeText(r.message) })),
     // Newest first.
@@ -105,21 +125,67 @@ function hostAllowed(req: IncomingMessage, port: number): boolean {
   return [`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`].includes(host);
 }
 
+const MAX_POST_BYTES = 4_000;
+
+function readBody(req: IncomingMessage): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    let body = "";
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString();
+      if (body.length > MAX_POST_BYTES) {
+        resolve(undefined);
+        req.destroy();
+      }
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", () => resolve(undefined));
+  });
+}
+
+/**
+ * A task starts a real browser run, so only the page itself may post one. Browsers send Origin (and Sec-Fetch-Site)
+ * on a fetch POST; a page on another site cannot fake either, and the JSON content type forces a preflight we never answer.
+ */
+function sameOrigin(req: IncomingMessage): boolean {
+  const site = req.headers["sec-fetch-site"];
+  if (site !== undefined && site !== "same-origin") return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  return origin.toLowerCase() === `http://${(req.headers.host ?? "").toLowerCase()}`;
+}
+
 /** Creates (does not start) the dashboard server. Starting is an explicit act of `startDashboard`. */
-export function createDashboardServer(config: ObserverConfig, now: () => Date = () => new Date()): Server {
+export function createDashboardServer(config: ObserverConfig, now: () => Date = () => new Date(), office?: OfficeHub): Server {
   let port = config.port;
   const server = createServer(async (req, res) => {
     try {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (req.method === "POST" && url.pathname === "/api/tasks" && office) {
+        if (!hostAllowed(req, port)) return send(res, 403, "text/plain", "Forbidden");
+        if (!sameOrigin(req)) return send(res, 403, "text/plain", "Forbidden");
+        if (!(req.headers["content-type"] ?? "").startsWith("application/json")) return send(res, 415, "text/plain", "application/json required");
+        const raw = await readBody(req);
+        let input: unknown;
+        try {
+          input = raw === undefined ? undefined : JSON.parse(raw);
+        } catch {
+          input = undefined;
+        }
+        if (input === undefined) return send(res, 400, "application/json; charset=utf-8", JSON.stringify({ error: "Invalid request" }));
+        const result = await office.assign(input);
+        const body = result.body.task ? { task: sanitizeOfficeView({ connected: true, readonly: false, agents: [], tasks: [result.body.task], events: [] }).tasks[0] } : result.body;
+        return send(res, result.status, "application/json; charset=utf-8", JSON.stringify(body));
+      }
       if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "text/plain", "Method not allowed");
       if (!hostAllowed(req, port)) return send(res, 403, "text/plain", "Forbidden");
-      const url = new URL(req.url ?? "/", "http://localhost");
       if (url.pathname === "/") return send(res, 200, "text/html; charset=utf-8", INDEX_HTML);
       if (url.pathname === "/app.css") return send(res, 200, "text/css; charset=utf-8", APP_CSS);
       if (url.pathname === "/app.js") return send(res, 200, "text/javascript; charset=utf-8", APP_JS);
       if (url.pathname === "/api/state") {
         const when = now();
         const scanned = await scanArtifactRoot(config, when);
-        return send(res, 200, "application/json; charset=utf-8", JSON.stringify(buildDashboardState(scanned, config, when)));
+        const officeView = office ? await office.view() : null;
+        return send(res, 200, "application/json; charset=utf-8", JSON.stringify(buildDashboardState(scanned, config, when, officeView)));
       }
       const shot = /^\/shot\/([^/]+)\/(\d{1,3})$/.exec(url.pathname);
       if (shot && RUN_NAME.test(shot[1] as string)) {
@@ -141,8 +207,8 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
 }
 
 /** Explicit start. Binds to the configured loopback host only. */
-export async function startDashboard(config: ObserverConfig): Promise<{ server: Server; port: number }> {
-  const server = createDashboardServer(config);
+export async function startDashboard(config: ObserverConfig, office?: OfficeHub): Promise<{ server: Server; port: number }> {
+  const server = createDashboardServer(config, undefined, office);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(config.port, config.host, resolve);
