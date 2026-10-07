@@ -6,9 +6,10 @@ export const manifest = createManifest({
   allowedTargetUrlPattern: "^https://qa-[a-z0-9-]+\\.example\\.test$",
   blockedTargets: ["prod", "www."],
   testAccountVariableNames: ["QA_ACCOUNT_A"],
+  availableScenarios: [],
   screens: [
-    { id: "screen-one" },
-    { id: "screen-two" },
+    { id: "screen-one", hidden: false },
+    { id: "screen-two", hidden: false },
     { id: "screen-hidden", hidden: true },
   ],
   forbiddenActions: ["delete account", "purchase", "sign out"],
