@@ -113,7 +113,7 @@ describe("artifact-driven workflow", () => {
 
     // inspection: references and codes only
     const view = await rt.inspect();
-    expect(view.agents.map((a) => `${a.id}@${a.version}`)).toEqual(["design-critic@1.0.0", "issue-reviewer@1.0.0", "run-creator@1.0.0", "test-planner@1.0.0"]);
+    expect(view.agents.map((a) => `${a.id}@${a.version}`)).toEqual(["accessibility-critic@1.0.0", "design-critic@1.0.0", "issue-reviewer@1.0.0", "run-creator@1.0.0", "test-planner@1.0.0"]);
     const criticView = view.tasks.find((t) => t.agentId === "design-critic")!;
     expect(criticView).toMatchObject({ state: "succeeded", outputSummary: "problems: 3 item(s), screenshotsReviewed: 1" });
     expect(criticView.proposedItems.every((i) => i.approval === "not-required")).toBe(true);

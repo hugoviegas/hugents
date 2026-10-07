@@ -1,6 +1,6 @@
 # Agent runtime
 
-`packages/runtime` (`@hugents/runtime`) runs agents that are **configuration, not code**. An agent is a versioned package (identity, prompt, skills, tools, schemas, permissions, limits, board destinations, approval policy). The runtime is generic: it never branches on an agent id. Design critic, test planner, run creator and issue reviewer are four packages in `packages/runtime/agents/` that select tools from a closed registry.
+`packages/runtime` (`@hugents/runtime`) runs agents that are **configuration, not code**. An agent is a versioned package (identity, prompt, skills, tools, schemas, permissions, limits, board destinations, approval policy). The runtime is generic: it never branches on an agent id. Design critic, test planner, run creator, issue reviewer and accessibility critic are packages in `packages/runtime/agents/` that select tools from a closed registry.
 
 ## Architecture
 
@@ -114,6 +114,9 @@ npm run build
 npm run agents -- demo                                   # whole flow, in memory, synthetic data
 npm run agents -- import packages/runtime/agents/design-critic
 npm run agents -- artifact-add report text/markdown <file> --import-root packages/duel-agent-office/artifacts
+npm run agents -- run accessibility-critic --artifact <reportId> --artifact <screenshotId> --import-root <dir>
+npm run agents -- run test-planner plan.json            # {"problemItemId": "..."}
+npm run agents -- transition <itemId> approved <rev>     # human gate, as --as (default hugo)
 npm run agents -- inspect
 npm run agents -- export design-critic 1.0.0 critic.bundle.json
 ```

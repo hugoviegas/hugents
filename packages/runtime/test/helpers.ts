@@ -6,7 +6,7 @@ import { parseManifest, type Manifest } from "@hugents/core";
 import { loadAgentPackage, openRuntime, type Actor, type AgentPackage, type RuntimeOptions, type ToolDefinition } from "../src/index.js";
 
 export const AGENTS_DIR = fileURLToPath(new URL("../agents/", import.meta.url));
-export const FIXTURE_AGENTS = ["design-critic", "test-planner", "run-creator", "issue-reviewer"] as const;
+export const FIXTURE_AGENTS = ["design-critic", "test-planner", "run-creator", "issue-reviewer", "accessibility-critic"] as const;
 
 export const hugo: Actor = { kind: "human", id: "hugo", role: "admin", capabilities: ["approval:grant", "config:mutate", "github:create-issue"] };
 export const reviewer: Actor = { kind: "human", id: "reviewer-2", role: "admin", capabilities: ["approval:grant"] };

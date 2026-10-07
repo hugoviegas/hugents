@@ -24,6 +24,8 @@ const USAGE = `hugents-agents <command> [options]
   list                                  registered agents and versions
   inspect                               admin view: agents, tasks, board items (references and codes only)
   artifact-add <kind> <mime> <file>     register a report/screenshot/log from an --import-root folder
+  run <agentId> [input.json]            submit and run a task on the newest version (--artifact <id> repeatable)
+  transition <itemId> <to> <rev>        move a board item as the admin (approve, reject, dismiss, ...)
   sweep                                 apply artifact retention
   demo                                  run the fixture workflow end to end (in memory unless --data is given)
 
@@ -53,6 +55,8 @@ async function main(argv: string[]): Promise<number> {
       as: { type: "string", default: "hugo" },
       "import-root": { type: "string", multiple: true },
       manifest: { type: "string" },
+      artifact: { type: "string", multiple: true },
+      reason: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -92,6 +96,23 @@ async function main(argv: string[]): Promise<number> {
       const kind = need(args[0]) as ArtifactKind;
       if (!ARTIFACT_KINDS.includes(kind)) throw new RuntimeError("artifact-kind-not-allowed");
       print(await rt.artifacts.importFile(path.resolve(need(args[2])), { kind, mime: need(args[1]), origin: { kind: "import", actorId: values.as } }));
+      return 0;
+    }
+    case "run": {
+      const agentId = need(args[0]);
+      const version = (await rt.registry.versions(agentId)).at(-1);
+      if (!version) throw new RuntimeError("agent-not-registered");
+      const input = args[1] ? JSON.parse(await readFile(args[1], "utf8")) : {};
+      const artifacts = await Promise.all((values.artifact ?? []).map((id) => rt.artifacts.ref(id)));
+      const task = await rt.runner.submit({ agentId, agentVersion: version, input, artifacts }, admin(values.as));
+      const done = await rt.runner.execute(task.id);
+      print((await rt.inspect()).tasks.find((t) => t.id === done.id));
+      return done.state === "succeeded" ? 0 : 3;
+    }
+    case "transition": {
+      const [itemId, to, rev] = [need(args[0]), need(args[1]), Number(need(args[2]))];
+      const item = await rt.boards.transition(itemId, to, admin(values.as), { expectedRev: rev, ...(values.reason ? { reason: values.reason } : {}) });
+      print({ id: item.id, board: item.board, state: item.state, rev: item.rev, approvedBy: item.approval?.by });
       return 0;
     }
     case "sweep":

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "accessibility-critic",
+  "version": "1.0.0",
+  "identity": {
+    "name": "Ally",
+    "role": "Accessibility Critic",
+    "description": "Turns accessibility findings (contrast, touch targets, labels, focus, text size) from a run report into problem items."
+  },
+  "officeAgent": "design-critic",
+  "model": { "provider": "deterministic" },
+  "prompt": { "system": "prompts/system.md" },
+  "skills": [
+    { "id": "wcag-checks", "file": "skills/wcag-checks.md" },
+    { "id": "touch-targets", "file": "skills/touch-targets.md" }
+  ],
+  "entry": "design-critic.review",
+  "tools": ["design-critic.review"],
+  "capabilities": ["artifact:read", "board:propose"],
+  "input": "schemas/input.json",
+  "output": "schemas/output.json",
+  "limits": {
+    "timeoutMs": 20000,
+    "maxRetries": 1,
+    "maxConcurrency": 1,
+    "maxInputArtifacts": 6,
+    "maxOutputBytes": 16384,
+    "maxTokens": 20000
+  },
+  "artifacts": { "accepts": ["report", "screenshot"], "produces": [] },
+  "boards": { "produces": [{ "board": "problems", "state": "open" }], "transitions": [] },
+  "approval": { "outputRequiresHuman": true },
+  "env": []
+}
