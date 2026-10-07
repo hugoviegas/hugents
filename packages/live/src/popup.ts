@@ -45,3 +45,17 @@ export function canOpenPopup(agent: { id: string }, activeRun: { agentId: string
 export function shouldShowFrame(state: PopupState, controls: { paused: boolean; hidden: boolean }): boolean {
   return (state === "live" || state === "slow") && !controls.hidden && !controls.paused ? true : false;
 }
+
+/** The dialog's single source of truth for what the stage shows (design handoff, LiveRunDialog). */
+export const STREAM_STATUSES = ["connecting", "live", "private", "slow", "ended", "none", "offline"] as const;
+export type StreamStatus = (typeof STREAM_STATUSES)[number];
+export type DialogView = "connecting" | "live" | "paused" | "slow" | "hidden" | "private" | "ended" | "none" | "offline";
+
+/** The person's choice (hide) wins over stream detail; pause only applies while live. */
+export function deriveView(status: StreamStatus, local: { paused: boolean; viewHidden: boolean }): DialogView {
+  if (status === "connecting" || status === "ended" || status === "none" || status === "offline") return status;
+  if (local.viewHidden) return "hidden";
+  if (status === "private") return "private";
+  if (status === "live" && local.paused) return "paused";
+  return status;
+}

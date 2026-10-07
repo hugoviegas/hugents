@@ -27,3 +27,19 @@ describe("popup", () => {
     expect(shouldShowFrame("hidden-by-gate", { paused: false, hidden: false })).toBe(false);
   });
 });
+
+import { deriveView } from "../src/popup.js";
+describe("deriveView", () => {
+  const none = { paused: false, viewHidden: false };
+  it("passes stream-only states through", () => {
+    for (const s of ["connecting", "ended", "none", "offline"] as const) expect(deriveView(s, { paused: true, viewHidden: true })).toBe(s);
+  });
+  it("lets the person's hide win, and pause only while live", () => {
+    expect(deriveView("private", { paused: false, viewHidden: true })).toBe("hidden");
+    expect(deriveView("live", { paused: true, viewHidden: true })).toBe("hidden");
+    expect(deriveView("live", { paused: true, viewHidden: false })).toBe("paused");
+    expect(deriveView("slow", { paused: true, viewHidden: false })).toBe("slow");
+    expect(deriveView("private", { paused: true, viewHidden: false })).toBe("private");
+    expect(deriveView("live", none)).toBe("live");
+  });
+});

@@ -26,7 +26,7 @@ describe("player private step", () => {
 });
 
 describe("startLiveView", () => {
-  const settings = { relayUrl: "http://127.0.0.1:1", workerToken: "0123456789abcdef0123", agentId: "player-alpha", config: { maxFps: 2, maxWidth: 640, maxHeight: 360, quality: 40, maxFrameBytes: 200_000 }, pollMs: 50 };
+  const settings = { relayUrl: "http://127.0.0.1:1", workerToken: "0123456789abcdef0123", agentId: "player-alpha", config: { maxFps: 2, maxWidth: 640, maxHeight: 360, quality: 40, maxFrameBytes: 200_000 }, overrides: {}, pollMs: 50 };
   const player = { label: "alpha", page: {} as never, inPrivateStep: true, isSafeToCapture: async () => false } as LivePlayer;
 
   it("stays off, without throwing, when the relay is unreachable", async () => {

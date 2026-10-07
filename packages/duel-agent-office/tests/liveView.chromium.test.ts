@@ -90,7 +90,7 @@ describe("live view with real Chromium", () => {
       isSafeToCapture: async () => (await page.getAttribute("body", "data-screen")) === "home",
     };
     const stages: LiveStage[] = [];
-    const settings = { relayUrl, workerToken: WT, agentId: "player-alpha", config: resolveConfig("high", { maxFps: 8 }), pollMs: 50 };
+    const settings = { relayUrl, workerToken: WT, agentId: "player-alpha", config: resolveConfig("high", { maxFps: 8 }), overrides: { maxFps: 8 }, pollMs: 50 };
     const live = await startLiveView({ settings, runId: "run-chromium", players: [player], onEvent: (s) => stages.push(s) });
     expect(live).toBeDefined();
 

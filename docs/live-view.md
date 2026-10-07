@@ -47,7 +47,7 @@ blacked out before navigation starts.
 
 ## Wiring in `duel-agent-office`
 
-Opt-in and local. With `OFFICE_LIVE_ENABLED=true` and `OFFICE_LIVE_VIEWER_TOKEN` (16+ characters), `office:bridge` hosts
+Opt-in and local. With `OFFICE_LIVE_ENABLED=true` and `OFFICE_LIVE_VIEWER_TOKEN` (16+ characters, set for both `office:bridge` and the dashboard process), `office:bridge` hosts
 the relay on `OFFICE_LIVE_PORT` (default 3101) and hands the runner a random worker token and the loopback URL through
 its environment (`QA_LIVE_RELAY_URL`, `QA_LIVE_WORKER_TOKEN`). The runner (`src/cli.ts`) calls `startLiveView` after
 both players open:
@@ -62,6 +62,26 @@ both players open:
 - Optional caps: `QA_LIVE_PRESET` (`low` default), `QA_LIVE_MAX_FPS`, `QA_LIVE_MAX_WIDTH`, `QA_LIVE_MAX_HEIGHT`,
   `QA_LIVE_QUALITY`, all clamped to the hard limits.
 - `tests/liveView.chromium.test.ts` runs real Chromium against synthetic pages and a real relay.
+
+## The popup (LiveRunDialog)
+
+Built from the design handoff on the Agent Office page (`packages/duel-agent-office/src/observer/liveDialogAssets.ts`).
+It follows the handoff's component tree, states, copy deck and accessibility notes: view only (the frame has no pointer
+events and is not focusable), one decoded frame at most, and every exit path (end, close, offline, player switch,
+private marker, hide) stops the subscription, closes the bitmap and clears the canvas before anything else paints.
+
+- The page never sees the viewer token. The office server (`dashboardCli`) reads `OFFICE_LIVE_VIEWER_TOKEN` and exposes
+  `GET /api/live/status` and `GET /api/live/stream` (same origin only, Host checked, GET only), which forward to the
+  relay. This also removes the need for CORS and keeps the stream behind the same loopback host check as the page.
+- "Watch live" shows on an agent only while the relay has an active run for it. Both players share one run, so it shows
+  for both player agents. With no run the popup says "No active run"; it never replays or simulates one.
+- Quality: the viewer asks for `auto`, `high` or `low`; the relay tells the worker the lowest preset any viewer asked
+  for and the worker restarts its capture with that preset's caps. A slow link forces Low.
+- Phase comes from the runner: Login while any player is in a login step, then Match, then Report. Checks is shown but
+  the runner does not report it yet. The handoff's per-step text is not available (the relay carries no step text),
+  so the footer shows the phase and run id instead.
+- Values the handoff marked [confirm] are used as proposed: 3 s to slow, 10 s on time to recover, 10 s to offline,
+  retry back-off 2, 4, 8, 16, 30 s.
 
 ## Events
 

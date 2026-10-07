@@ -50,9 +50,9 @@ async function start(extra = {}) {
   return port;
 }
 
-function openStream(port: number, player = "alpha") {
+function openStream(port: number, player = "alpha", quality = "") {
   const chunks: string[] = [];
-  const r = http.request({ host: "127.0.0.1", port, path: `/viewer/stream?player=${player}`, headers: auth(VT) }, (res) => {
+  const r = http.request({ host: "127.0.0.1", port, path: `/viewer/stream?player=${player}${quality ? `&quality=${quality}` : ""}`, headers: auth(VT) }, (res) => {
     res.on("data", (c) => chunks.push(String(c)));
   });
   r.end();
@@ -154,10 +154,26 @@ describe("relay", () => {
     expect(JSON.parse((await req(port, { path: "/worker/wanted", headers: auth(WT) })).body)).toEqual({ wanted: false });
     const s = openStream(port);
     await wait(50);
-    expect(JSON.parse((await req(port, { path: "/worker/wanted", headers: auth(WT) })).body)).toEqual({ wanted: true });
+    expect(JSON.parse((await req(port, { path: "/worker/wanted", headers: auth(WT) })).body)).toEqual({ wanted: true, preset: "medium" });
     s.close();
     expect((await post({ action: "end", runId: "r9", status: "failed" })).status).toBe(200);
     const st = JSON.parse((await req(port, { path: "/viewer/status", headers: auth(VT) })).body);
     expect(st).toMatchObject({ run: null, lastRun: { status: "failed" } });
+  });
+
+  it("tells the worker the lowest quality any viewer asked for", async () => {
+    const port = await start();
+    const preset = async () => JSON.parse((await req(port, { path: "/worker/wanted", headers: auth(WT) })).body).preset;
+    expect(await preset()).toBeUndefined();
+    const a = openStream(port, "alpha", "high");
+    await wait(50);
+    expect(await preset()).toBe("high");
+    const b = openStream(port, "bravo", "low");
+    await wait(50);
+    expect(await preset()).toBe("low");
+    b.close();
+    await wait(50);
+    expect(await preset()).toBe("high");
+    a.close();
   });
 });

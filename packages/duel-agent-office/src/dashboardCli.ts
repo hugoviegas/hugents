@@ -40,6 +40,11 @@ async function main(): Promise<void> {
     connections: fileConnectionStore({ file: path.join(officeDir, "connections.json"), readonly, seedLocalPath: process.env.OFFICE_GAME_REPO }),
     // Read-only GitHub access. The token (optional) comes from the process environment, never from the page or a file.
     github: { token: process.env.GITHUB_TOKEN?.trim() || undefined },
+    // Live browser view (opt-in). The token is read here, on the server, and never sent to the page.
+    live:
+      process.env.OFFICE_LIVE_ENABLED === "true" && (process.env.OFFICE_LIVE_VIEWER_TOKEN ?? "").trim().length >= 16
+        ? { relayUrl: `http://127.0.0.1:${Number(process.env.OFFICE_LIVE_PORT ?? 3101)}`, viewerToken: process.env.OFFICE_LIVE_VIEWER_TOKEN!.trim() }
+        : undefined,
   };
   const { port } = await startDashboard(config, office, layout, stores);
   const host = config.host.includes(":") ? `[${config.host}]` : config.host;

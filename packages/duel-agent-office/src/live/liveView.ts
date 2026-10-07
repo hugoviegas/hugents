@@ -1,4 +1,4 @@
-import { createCapture, createFrameGate, type Capture, type FrameGate, type LiveFrame, type LiveStage, type ScreencastPage } from "@hugents/live";
+import { createCapture, createFrameGate, resolveConfig, type Capture, type LiveFrame, type LiveStage, type QualityPreset, type ScreencastPage } from "@hugents/live";
 import type { LiveWorkerConfig } from "./config.js";
 
 /** The slice of a PlayerSession the live view needs. */
@@ -70,26 +70,50 @@ export async function startLiveView(o: LiveViewOptions): Promise<LiveView | unde
       });
   };
 
-  const parts: { capture: Capture; gate: FrameGate; player: LivePlayer }[] = o.players.map((player) => {
+  const gates = o.players.map((player) => {
     const gate = createFrameGate(RUNNER_SCREENS, async () => {
       if (player.inPrivateStep) return "private";
       return (await player.isSafeToCapture()) ? "safe" : "private";
     });
     gate.setPrivateStep(player.inPrivateStep);
-    player.onPrivateStep = (active) => gate.setPrivateStep(active);
-    const capture = createCapture({
-      page: player.page,
-      gate,
-      config: settings.config,
-      runId: o.runId,
-      agentId: settings.agentId,
-      player: player.label,
-      publish,
-      hasViewer: () => wanted,
-      ...(o.onEvent ? { onEvent: o.onEvent } : {}),
-    });
-    return { capture, gate, player };
+    return gate;
   });
+
+  // Phase for the viewer: "login" while any player is in a login step, then "match", then "report" at the end.
+  let phase = "";
+  const setPhase = (next: string): void => {
+    if (next === phase || stopped) return;
+    phase = next;
+    void call("/worker/run", { method: "POST", body: JSON.stringify({ action: "update", phase: next }) });
+  };
+  const syncPhase = (): void => setPhase(o.players.some((p) => p.inPrivateStep) ? "login" : "match");
+  o.players.forEach((player, i) => {
+    player.onPrivateStep = (active) => {
+      gates[i]!.setPrivateStep(active);
+      syncPhase();
+    };
+  });
+  syncPhase();
+
+  const makeCaptures = (preset: QualityPreset): { capture: Capture; player: LivePlayer }[] => {
+    const config = resolveConfig(preset, settings.overrides);
+    return o.players.map((player, i) => ({
+      player,
+      capture: createCapture({
+        page: player.page,
+        gate: gates[i]!,
+        config,
+        runId: o.runId,
+        agentId: settings.agentId,
+        player: player.label,
+        publish,
+        hasViewer: () => wanted,
+        ...(o.onEvent ? { onEvent: o.onEvent } : {}),
+      }),
+    }));
+  };
+  let currentPreset: QualityPreset = "medium";
+  let parts = makeCaptures(currentPreset);
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
@@ -98,6 +122,13 @@ export async function startLiveView(o: LiveViewOptions): Promise<LiveView | unde
     if (now !== wanted) {
       wanted = now;
       o.onEvent?.(now ? "viewer-connected" : "viewer-disconnected");
+    }
+    const asked = r?.preset;
+    if (wanted && (asked === "low" || asked === "medium" || asked === "high") && asked !== currentPreset) {
+      // A viewer picked another quality: restart the captures with that preset's caps.
+      await Promise.all(parts.map(({ capture }) => capture.stop()));
+      currentPreset = asked;
+      parts = makeCaptures(asked);
     }
     for (const { capture } of parts) {
       if (wanted && !capture.active) await capture.start().catch(() => undefined);
@@ -113,7 +144,8 @@ export async function startLiveView(o: LiveViewOptions): Promise<LiveView | unde
       stopped = true;
       clearInterval(timer);
       await Promise.all(parts.map(({ capture }) => capture.stop()));
-      for (const { player } of parts) delete player.onPrivateStep;
+      for (const player of o.players) delete player.onPrivateStep;
+      await call("/worker/run", { method: "POST", body: JSON.stringify({ action: "update", phase: "report" }) });
       await call("/worker/run", { method: "POST", body: JSON.stringify({ action: "end", runId: o.runId, status }) });
     },
   };

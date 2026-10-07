@@ -1,7 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { parseFrame, type LiveConfig, type LiveFrame } from "./frame.js";
+import { parseFrame, type LiveConfig, type LiveFrame, type QualityPreset } from "./frame.js";
+
+export const VIEWER_QUALITIES = ["auto", "high", "low"] as const;
+export type ViewerQuality = (typeof VIEWER_QUALITIES)[number];
+const PRESET_RANK: Record<QualityPreset, number> = { low: 0, medium: 1, high: 2 };
+const QUALITY_PRESET: Record<ViewerQuality, QualityPreset> = { low: "low", auto: "medium", high: "high" };
 
 export const BIND_HOST = "127.0.0.1";
 
@@ -53,7 +58,7 @@ export function createRelay(opts: RelayOptions): Relay {
   const maxPlayers = opts.maxPlayers ?? 4;
   const maxBody = Math.ceil(opts.config.maxFrameBytes * 1.4) + 2048;
   const latest = new Map<string, LiveFrame>();
-  const viewers = new Set<{ res: ServerResponse; player: string }>();
+  const viewers = new Set<{ res: ServerResponse; player: string; quality: ViewerQuality }>();
   let run: RunInfo | undefined;
   let lastRun: { status: string; endedAt: string } | undefined;
   let boundPort = 0;
@@ -65,6 +70,15 @@ export function createRelay(opts: RelayOptions): Relay {
   const sse = (v: { res: ServerResponse }, event: string, data: unknown): void => {
     if (v.res.writableNeedDrain) return; // slow viewer: drop, do not buffer
     v.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  /** The lowest quality any viewer asked for: a slow or frugal viewer must not be outvoted. */
+  const requestedPreset = (): QualityPreset | undefined => {
+    let best: QualityPreset | undefined;
+    for (const v of viewers) {
+      const p = QUALITY_PRESET[v.quality];
+      if (best === undefined || PRESET_RANK[p] < PRESET_RANK[best]) best = p;
+    }
+    return best;
   };
   const notifyViewers = () => opts.onViewerChange?.(viewers.size);
 
@@ -113,7 +127,8 @@ export function createRelay(opts: RelayOptions): Relay {
           const player = url.searchParams.get("player") ?? "alpha";
           if (!/^[A-Za-z0-9_-]{1,64}$/.test(player)) return send(res, 400, { error: "bad-player" });
           res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
-          const v = { res, player };
+          const q = url.searchParams.get("quality");
+          const v = { res, player, quality: (VIEWER_QUALITIES as readonly string[]).includes(q ?? "") ? (q as ViewerQuality) : "auto" };
           viewers.add(v);
           notifyViewers();
           req.on("close", () => {
@@ -130,7 +145,7 @@ export function createRelay(opts: RelayOptions): Relay {
       if (path === "/worker/wanted") {
         if (req.method !== "GET") return send(res, 405, { error: "method-not-allowed" });
         if (!sameSecret(bearer(req), opts.workerToken)) return send(res, 401, { error: "unauthorized" });
-        return send(res, 200, { wanted: !!run && viewers.size > 0 });
+        return send(res, 200, { wanted: !!run && viewers.size > 0, preset: requestedPreset() });
       }
 
       if (path === "/worker/run") {

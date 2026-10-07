@@ -203,6 +203,8 @@ export interface OfficeStores {
   connections?: ConnectionStore;
   /** Read-only GitHub access (token from the process environment, optional). */
   github?: GithubOptions;
+  /** Live browser view. The viewer token stays on this server; the page only ever calls /api/live/*. */
+  live?: { relayUrl: string; viewerToken: string };
 }
 
 const REPORT_LIMIT = 200;
@@ -304,6 +306,39 @@ export function createDashboardServer(config: ObserverConfig, now: () => Date = 
         } catch (error) {
           return send(res, 502, "application/json; charset=utf-8", JSON.stringify({ error: error instanceof RepoError ? error.message : "The source could not be read" }));
         }
+      }
+      if (url.pathname === "/api/live/status") {
+        const live = stores.live;
+        if (!live) return send(res, 200, "application/json; charset=utf-8", JSON.stringify({ enabled: false }));
+        try {
+          const up = await fetch(`${live.relayUrl}/viewer/status`, { headers: { authorization: `Bearer ${live.viewerToken}` }, signal: AbortSignal.timeout(1500) });
+          if (!up.ok) throw new Error("relay refused");
+          return send(res, 200, "application/json; charset=utf-8", JSON.stringify({ enabled: true, relay: "up", ...((await up.json()) as object) }));
+        } catch {
+          return send(res, 200, "application/json; charset=utf-8", JSON.stringify({ enabled: true, relay: "offline" }));
+        }
+      }
+      if (url.pathname === "/api/live/stream") {
+        const live = stores.live;
+        const player = url.searchParams.get("player") ?? "alpha";
+        const quality = url.searchParams.get("quality") ?? "auto";
+        if (!live) return send(res, 404, "application/json; charset=utf-8", JSON.stringify({ error: "Live view is off" }));
+        if (!sameOrigin(req) || !["alpha", "bravo"].includes(player) || !["auto", "high", "low"].includes(quality)) return send(res, 400, "application/json; charset=utf-8", JSON.stringify({ error: "Invalid request" }));
+        const abort = new AbortController();
+        res.on("close", () => abort.abort());
+        try {
+          const up = await fetch(`${live.relayUrl}/viewer/stream?player=${player}&quality=${quality}`, { headers: { authorization: `Bearer ${live.viewerToken}` }, signal: abort.signal });
+          if (!up.ok || !up.body) return send(res, 502, "application/json; charset=utf-8", JSON.stringify({ error: "The frame relay did not answer" }));
+          res.writeHead(200, { ...SECURITY_HEADERS, "Content-Type": "text/event-stream", Connection: "keep-alive" });
+          // Frames are forwarded as they come and never stored. A slow page is skipped, not buffered.
+          for await (const chunk of up.body as unknown as AsyncIterable<Uint8Array>) {
+            if (res.writableNeedDrain) continue;
+            res.write(chunk);
+          }
+        } catch {
+          if (!res.headersSent) return send(res, 502, "application/json; charset=utf-8", JSON.stringify({ error: "The frame relay did not answer" }));
+        }
+        return void res.end();
       }
       const shot = /^\/shot\/([^/]+)\/(\d{1,3})$/.exec(url.pathname);
       if (shot && RUN_NAME.test(shot[1] as string)) {
