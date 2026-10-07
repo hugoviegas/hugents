@@ -3,9 +3,9 @@
 Four QA agents (`player-alpha`, `explorer`, `qa-analyst`, `design-critic`) on a pixel-art office dashboard. Hugo creates tasks by hand on the task board; each agent claims its task, runs fixed tools against the local runner, writes a report and shows its status live. Everything is local: Ollama for text, Playwright against the Vercel Preview + Firebase QA backend, no GitHub writes, no Production, no real-player accounts.
 
 ```
- Browser (AgentOffice UI, :5173)
-        │  Colyseus ws
- AgentOffice server (:3000, patched)  ── SQLite: tasks + memories (+ Ollama embeddings)
+ Browser (Agent Office page, 127.0.0.1:4873)
+        │  GET /api/state, POST /api/tasks (same origin only)
+ Agent Office server  src/observer/dashboard.ts + src/office/hub.ts  ── artifacts/office/tasks.json
         │  HTTP, loopback only
  Office bridge (:3100)  src/office/*  ── report text: Gemini (optional) → Ollama → deterministic
         │  spawns
@@ -14,17 +14,20 @@ Four QA agents (`player-alpha`, `explorer`, `qa-analyst`, `design-critic`) on a 
  artifacts/runs/…  artifacts/reports/…  artifacts/office/metrics.json
 ```
 
-Everything Big Bang Duel specific (agents, tools, contract, metrics) lives in `src/office/` and does not import AgentOffice. AgentOffice is only the UI and room server, patched by `office/agentoffice-qa.patch`.
+Everything Big Bang Duel specific (agents, tools, contract, metrics) lives in `src/office/`. The office screen is the Agent Office page from the Claude Design canvas ("Live office"): the QA bullpen with a desk for each of the four agents, the roster, the selected-agent panel with the task form, current task and event log, then the task board, findings, evidence and runs. The page server (`src/observer/dashboard.ts`) keeps the task board in `src/office/hub.ts`: it forwards each task to the bridge, reads the bridge's event stream and stores the board in `artifacts/office/tasks.json`, so a reload or a second tab shows the same office. When the bridge does not answer, the page says `Bridge offline. Activity is unknown, not idle.` instead of showing idle agents.
+
+**Layout editor.** `Edit layout` in the top bar opens the design's editor: tools Select (V), Move (M), Place (P), Erase (E), Rotate (R) and Recolor (C), a 10 × 8 tile grid, a ghost footprint that shows whether a spot is free, and a panel for the selected prop (which agent uses a desk, rotation, material, tile X and Y, remove). Arrow keys nudge the selected prop, Delete removes it, Ctrl+Z and Ctrl+Shift+Z undo and redo, Ctrl+S saves. Removing an agent's desk moves the agent to the nearest free desk. `Save layout` writes `artifacts/office/layout.json` (`POST /api/layout`, same-origin JSON, refused in read-only mode). The layout is visual only: it holds positions, rotation, material, desk numbers and the agent per desk, and the server keeps no other field. Rotation has two steps (0° and 90°), because the sprites are drawn from two sides only.
+
+**Old AgentOffice UI.** `OFFICE_UI=agentoffice npm run office:start` still starts the AgentOffice server and UI on :5173 (needs `npm run office:setup`), patched by `office/agentoffice-qa.patch`. The patch dresses the AgentOffice HUD in the Agent Office design system: `office/theme/agent-office.css` (design tokens for four themes plus HUD classes) is generated from `src/theme/` by `npm run office:theme` and copied into the vendored UI by `npm run office:setup`; the patch links it and redraws the whole office in it. The Phaser map takes its floors, walls, furniture and labels from the theme tokens and shows pixel glyphs instead of emoji. Every panel (task board, activity log, chat, agent pulse, highlights, relationships, episode recap, showrunner, layout editor) uses the same HUD classes, with state shown as icon, word and colour and agent names in their identity colours. The secondary panels start collapsed in a dock under the task board. The brand card has a theme picker (Workshop, Outpost, Night, Light; kept per browser, reloads to repaint the map). The UI loads Pixelify Sans, Atkinson Hyperlegible and IBM Plex Mono from Google Fonts and falls back to system fonts offline. After pulling a new patch, delete `vendor/agent-office` and rerun `npm run office:setup`, since the setup only applies the patch to a clean checkout.
 
 ## Run it
 
 ```bash
 npm install
-npm run office:setup     # once: clones AgentOffice at a pinned commit into vendor/ (ignored), applies the patch, installs, builds
-npm run office:start     # bridge + AgentOffice server + UI, Ctrl+C stops all three
+npm run office:start     # bridge + Agent Office page, Ctrl+C stops both
 ```
 
-Open `http://localhost:5173`, type a task such as `Explorer: test Missions screen`, pick the agent in the dropdown and press Assign. Tasks wait in a per-agent queue; an agent claims the next one when idle.
+Open `http://127.0.0.1:4873`, pick an agent in the roster or the room, type a task such as `Test the Missions screen` and press Assign. An agent takes one task at a time; the form stays disabled while it works. `npm run agent:dashboard` starts only the page (it shows the bridge as offline until `npm run office:bridge` runs). The old AgentOffice UI needs `npm run office:setup` once.
 
 Prerequisites: the runner `.env` from the [README](../README.md) (without it every scenario task ends `blocked` with the list of missing variable names), and [Ollama](https://ollama.com) listening on `127.0.0.1:11434`.
 
@@ -175,7 +178,7 @@ Anyone who can reach the room can assign tasks, and a task can start a real brow
 OFFICE_READONLY=true npm run office:start     # PowerShell: $env:OFFICE_READONLY="true"; npm run office:start
 ```
 
-In read-only mode the server ignores `assign-task`, `chat`, `command`, `start-scenario`, `trigger-chaos` and `save-layout`, answers `/api/vote-chaos` with 403, and the UI hides the task form. The bridge stays on loopback and is never exposed.
+With the Agent Office page, read-only mode refuses `POST /api/tasks` (403) and the page disables the task form. The page binds to loopback only and shows run ids and approved screenshots, so it is not meant to be shared through a tunnel. With the old AgentOffice UI, read-only mode makes the server ignore `assign-task`, `chat`, `command`, `start-scenario`, `trigger-chaos` and `save-layout`, answers `/api/vote-chaos` with 403, and the UI hides the task form. The bridge stays on loopback and is never exposed.
 
 What the viewer sees: agent names, thoughts, redacted event text, task titles, counters. It never sees screenshots, artifact paths, run ids, URLs, credentials, room codes or e-mail addresses: bridge events are redacted before they leave the bridge, and the UI has no screenshot or file viewer. Task titles are typed by Hugo, so keep them free of secrets.
 

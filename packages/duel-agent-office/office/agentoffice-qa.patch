@@ -300,28 +300,873 @@ index b01d46e..c881092 100644
      }
  
      onLeave(client: Client, consented: boolean) {
+diff --git a/packages/ui/index.html b/packages/ui/index.html
+index 5df9b88..f1183d4 100644
+--- a/packages/ui/index.html
++++ b/packages/ui/index.html
+@@ -1,11 +1,15 @@
+ <!DOCTYPE html>
+-<html lang="en">
++<html lang="en" data-theme="workshop">
+   <head>
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>AgentOffice</title>
++    <title>Agent Office</title>
++    <link rel="preconnect" href="https://fonts.googleapis.com" />
++    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
++    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=Pixelify+Sans:wght@400;600&display=swap" />
++    <link rel="stylesheet" href="/agent-office.css" />
+     <style>
+-      body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; color: #fff; font-family: 'Inter', sans-serif; }
++      body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg, #1A1410); color: var(--text-primary, #F6ECDD); font: var(--type-body, 15px/22px system-ui, sans-serif); }
+       #phaser-container { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; }
+       #ui-root { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 2; pointer-events: none; }
+       /* Allow clicks to pass through empty UI space to Phaser */
 diff --git a/packages/ui/src/App.tsx b/packages/ui/src/App.tsx
-index 90dc888..3b7eca4 100644
+index 90dc888..38e84f0 100644
 --- a/packages/ui/src/App.tsx
 +++ b/packages/ui/src/App.tsx
-@@ -1,7 +1,6 @@
+@@ -1,7 +1,24 @@
  import React from 'react';
++
++const THEMES = [
++    { id: 'workshop', name: 'Workshop' },
++    { id: 'outpost', name: 'Outpost' },
++    { id: 'night', name: 'Night' },
++    { id: 'light', name: 'Light' },
++];
++
++function changeTheme(id: string) {
++    try {
++        window.localStorage.setItem('agent-office:theme', id);
++    } catch {
++        // Storage blocked: the theme lasts until reload.
++    }
++    document.documentElement.dataset.theme = id;
++    // The Phaser map reads its palette once, so reload to repaint it.
++    window.location.reload();
++}
  import { ChatPanel } from './components/ChatPanel';
  import { TaskBoard } from './components/TaskBoard';
 -import { AgentInspector } from './components/AgentInspector';
  import { LayoutEditor } from './components/LayoutEditor';
  import { SystemLog } from './components/SystemLog';
  import { ViralControlPanel } from './components/ViralControlPanel';
-@@ -19,7 +18,6 @@ export function App() {
+@@ -13,20 +30,34 @@ import { EpisodeRecapPanel } from './components/EpisodeRecapPanel';
+ export function App() {
+     return (
+         <>
+-            <div style={{ position: 'absolute', bottom: 20, left: 20, color: 'white', backgroundColor: 'rgba(10,10,30,0.85)', padding: '12px 16px', borderRadius: '10px', zIndex: 10, border: '1px solid rgba(108,92,231,0.3)' }}>
+-                <h1 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: 8 }}>🏢 AgentOffice</h1>
+-                <p style={{ margin: '4px 0 0', opacity: 0.6, fontSize: '11px' }}>Real-time multi-agent AI simulation</p>
++            <div className="ao-brand is-right">
++                <span className="ao-eyebrow">Big Bang Duel</span>
++                <h1 className="ao-title">Agent Office</h1>
++                <span className="ao-caption">Desks lit by real work.</span>
++                <label className="ao-check ao-theme">
++                    Theme
++                    <select
++                        className="ao-field"
++                        value={document.documentElement.dataset.theme || 'workshop'}
++                        onChange={(e) => changeTheme(e.target.value)}
++                    >
++                        {THEMES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
++                    </select>
++                </label>
++            </div>
++            <div className="ao-left">
++                <TaskBoard />
++                <div className="ao-dock">
++                    <AgentPulseBoard />
++                    <HighlightsFeed />
++                    <RelationshipGraph />
++                    <EpisodeRecapPanel />
++                    <ViralControlPanel />
++                    <LayoutEditor />
++                </div>
              </div>
-             <ChatPanel />
-             <TaskBoard />
+-            <ChatPanel />
+-            <TaskBoard />
 -            <AgentInspector agent={{ name: 'Alice', role: 'Engineer', status: 'Idle', currentTask: 'Write Scaffold' }} />
-             <LayoutEditor />
+-            <LayoutEditor />
              <SystemLog />
-             <ViralControlPanel />
+-            <ViralControlPanel />
+-            <RelationshipGraph />
+-            <HighlightsFeed />
+-            <AgentPulseBoard />
+-            <EpisodeRecapPanel />
++            <ChatPanel />
+         </>
+     );
+ }
+diff --git a/packages/ui/src/components/AgentInspector.tsx b/packages/ui/src/components/AgentInspector.tsx
+index ed31bb0..40dffe8 100644
+--- a/packages/ui/src/components/AgentInspector.tsx
++++ b/packages/ui/src/components/AgentInspector.tsx
+@@ -3,12 +3,14 @@ import React from 'react';
+ export function AgentInspector({ agent }: { agent?: any }) {
+     if (!agent) return null;
+     return (
+-        <div style={{ position: 'absolute', right: 20, top: 20, width: 250, backgroundColor: 'rgba(0,0,0,0.8)', color: 'white', padding: 16, borderRadius: 8 }}>
+-            <h3 style={{ margin: '0 0 10px 0' }}>Inspector: {agent.name}</h3>
+-            <div style={{ fontSize: '14px' }}>
+-                <p style={{ margin: '4px 0' }}><strong>Role:</strong> {agent.role}</p>
+-                <p style={{ margin: '4px 0' }}><strong>Status:</strong> {agent.status}</p>
+-                <p style={{ margin: '4px 0' }}><strong>Current Task:</strong> {agent.currentTask || 'None'}</p>
++        <div className="ao-panel ao-inspector">
++            <div className="ao-panel-head">
++                <h2 className="ao-panel-title">{agent.name}</h2>
++            </div>
++            <div className="ao-panel-body">
++                <p className="ao-item-body"><strong>Role:</strong> {agent.role}</p>
++                <p className="ao-item-body"><strong>Status:</strong> {agent.status}</p>
++                <p className="ao-item-body"><strong>Current task:</strong> {agent.currentTask || 'None'}</p>
+             </div>
+         </div>
+     );
+diff --git a/packages/ui/src/components/AgentPulseBoard.tsx b/packages/ui/src/components/AgentPulseBoard.tsx
+index c30501f..8f6cd79 100644
+--- a/packages/ui/src/components/AgentPulseBoard.tsx
++++ b/packages/ui/src/components/AgentPulseBoard.tsx
+@@ -1,6 +1,7 @@
+ import React, { useEffect, useMemo, useState } from 'react';
+ import { eventBus } from '../events';
+ import { FloatingPanel } from './FloatingPanel';
++import { Who } from './ui';
+ 
+ type AgentPulse = {
+     id: string;
+@@ -38,33 +39,31 @@ export function AgentPulseBoard() {
+     return (
+         <FloatingPanel
+             id="agent-pulse"
+-            title="Agent Pulse"
++            title="Agent pulse"
+             subtitle="Mood, risk, momentum"
+             width={300}
+             defaultDock="left"
+-            defaultY={420}
++            defaultMinimized
++            docked
+             zIndex={14}
+         >
+-            {sortedAgents.length === 0 && (
+-                <div style={{ fontSize: 11, color: '#86c6b5' }}>Waiting for live telemetry...</div>
+-            )}
+-            {sortedAgents.map((agent) => (
+-                <div key={agent.id} style={{
+-                    marginBottom: 8,
+-                    paddingBottom: 8,
+-                    borderBottom: '1px solid rgba(255,255,255,0.08)'
+-                }}>
+-                    <div style={{ fontSize: 12, fontWeight: 700 }}>
+-                        {agent.name} <span style={{ fontWeight: 400, color: '#98ccb9' }}>({agent.action})</span>
+-                    </div>
+-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, fontSize: 10, marginTop: 4, color: '#cbe9df' }}>
+-                        <div>Mood: {pct(agent.mood)}</div>
+-                        <div>Reputation: {pct(agent.reputation)}</div>
+-                        <div>Risk: {pct(agent.riskLevel)}</div>
+-                        <div>Momentum: {pct(agent.momentum)}</div>
+-                    </div>
+-                </div>
+-            ))}
++            {sortedAgents.length === 0 && <p className="ao-empty">No agent telemetry yet.</p>}
++            <ul className="ao-list">
++                {sortedAgents.map((agent) => (
++                    <li key={agent.id} className="ao-item">
++                        <div className="ao-item-row">
++                            <Who name={agent.name} />
++                            <span className="ao-meta">{agent.action}</span>
++                        </div>
++                        <div className="ao-grid2">
++                            <span>Mood {pct(agent.mood)}</span>
++                            <span>Reputation {pct(agent.reputation)}</span>
++                            <span>Risk {pct(agent.riskLevel)}</span>
++                            <span>Momentum {pct(agent.momentum)}</span>
++                        </div>
++                    </li>
++                ))}
++            </ul>
+         </FloatingPanel>
+     );
+ }
+diff --git a/packages/ui/src/components/ChatPanel.tsx b/packages/ui/src/components/ChatPanel.tsx
+index 1e5c285..3310e4d 100644
+--- a/packages/ui/src/components/ChatPanel.tsx
++++ b/packages/ui/src/components/ChatPanel.tsx
+@@ -1,6 +1,8 @@
+ import React, { useState, useEffect, useRef } from 'react';
+ import { eventBus } from '../events';
+ import { getColyseusRoom } from '../game/Game';
++import { FloatingPanel } from './FloatingPanel';
++import { Who } from './ui';
+ 
+ export function ChatPanel() {
+     const [messages, setMessages] = useState<{ sender: string, text: string }[]>([
+@@ -28,29 +30,27 @@ export function ChatPanel() {
+             room.send('chat', { text: input });
+             setInput('');
+         } else {
+-            setMessages(prev => [...prev, { sender: 'System', text: 'Error: Cannot send message, Colyseus not connected.' }]);
++            setMessages(prev => [...prev, { sender: 'System', text: 'Cannot send: the office server is not connected.' }]);
+         }
+     };
+ 
+     return (
+-        <div style={{ position: 'absolute', right: 20, bottom: 20, width: 300, height: 400, backgroundColor: 'rgba(0,0,0,0.8)', color: 'white', padding: 16, borderRadius: 8, display: 'flex', flexDirection: 'column' }}>
+-            <h3 style={{ margin: '0 0 10px 0' }}>Office Chat</h3>
+-            <div style={{ flex: 1, overflowY: 'auto', fontSize: '14px', marginBottom: 10, paddingRight: 4 }}>
++        <FloatingPanel id="office-chat" title="Office chat" subtitle="Talk to the agents" width={300} defaultDock="right" defaultY={330} zIndex={13}>
++            <div className="ao-chat" aria-live="polite">
+                 {messages.map((m, i) => (
+-                    <p key={i} style={{ margin: '6px 0', lineHeight: '1.4' }}>
+-                        <strong style={{ color: m.sender === 'System' ? '#00eeff' : '#aaffaa' }}>{m.sender}:</strong> {m.text}
+-                    </p>
++                    <p key={i}><Who name={m.sender} />: {m.text}</p>
+                 ))}
+                 <div ref={endRef} />
+             </div>
+             <input
+                 type="text"
+-                placeholder="Send a message..."
++                className="ao-field"
++                aria-label="Message"
++                placeholder="Send a message"
+                 value={input}
+                 onChange={(e) => setInput(e.target.value)}
+                 onKeyDown={(e) => e.key === 'Enter' && send()}
+-                style={{ width: '100%', padding: '10px', boxSizing: 'border-box', background: '#333', color: 'white', border: '1px solid #444', borderRadius: 4, outline: 'none' }}
+             />
+-        </div>
++        </FloatingPanel>
+     );
+ }
+diff --git a/packages/ui/src/components/EpisodeRecapPanel.tsx b/packages/ui/src/components/EpisodeRecapPanel.tsx
+index e73a9d6..6ff1dd6 100644
+--- a/packages/ui/src/components/EpisodeRecapPanel.tsx
++++ b/packages/ui/src/components/EpisodeRecapPanel.tsx
+@@ -1,5 +1,6 @@
+ import React, { useState } from 'react';
+ import { FloatingPanel } from './FloatingPanel';
++import { Who } from './ui';
+ 
+ type RecapPayload = {
+     scenario: string;
+@@ -13,7 +14,7 @@ export function EpisodeRecapPanel() {
+     const [status, setStatus] = useState('');
+ 
+     const loadRecap = async () => {
+-        setStatus('Loading recap...');
++        setStatus('Loading recap.');
+         try {
+             const response = await fetch('/api/episode-recap');
+             const data = await response.json();
+@@ -42,45 +43,38 @@ export function EpisodeRecapPanel() {
+     return (
+         <FloatingPanel
+             id="episode-recap"
+-            title="Episode Recap"
++            title="Episode recap"
+             subtitle="Export-ready run summary"
+-            width={340}
++            width={300}
+             defaultDock="left"
+-            defaultY={220}
++            defaultMinimized
++            docked
+             zIndex={15}
+         >
+-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+-                <button onClick={loadRecap} style={{
+-                    border: 'none', borderRadius: 8, padding: '7px 10px', cursor: 'pointer',
+-                    background: '#b388ff', color: '#1e1130', fontWeight: 700, fontSize: 11
+-                }}>Load</button>
+-                <button onClick={exportRecap} disabled={!recap} style={{
+-                    border: '1px solid rgba(255,255,255,0.2)', borderRadius: 8, padding: '7px 10px', cursor: 'pointer',
+-                    background: recap ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)', color: '#f2e9ff', fontSize: 11
+-                }}>Export JSON</button>
++            <div className="ao-row">
++                <button type="button" className="ao-btn ao-btn-primary" onClick={loadRecap}>Load</button>
++                <button type="button" className="ao-btn" onClick={exportRecap} disabled={!recap}>Export JSON</button>
+             </div>
+-            <div style={{ fontSize: 11, color: '#d9c8f2', marginBottom: 8 }}>{status}</div>
++            {status && <p className="ao-meta">{status}</p>}
+ 
+             {recap && (
+                 <>
+-                    <div style={{ fontSize: 11, color: '#f7d794', marginBottom: 6 }}>
+-                        {recap.outcomeCard.title}: {recap.outcomeCard.summary}
+-                    </div>
+-                    <div style={{ fontSize: 11, marginBottom: 6 }}>
+-                        Active alliances/rivalries: <strong>{recap.outcomeCard.activeRelationships}</strong>
+-                    </div>
+-                    <div style={{ fontSize: 11, marginBottom: 4, color: '#cdb4db' }}>Top Highlights</div>
+-                    {recap.topHighlights.slice(0, 3).map((h, i) => (
+-                        <div key={i} style={{ fontSize: 10, marginBottom: 5, color: '#efe1ff' }}>
+-                            • {h.title}
+-                        </div>
+-                    ))}
+-                    <div style={{ fontSize: 11, marginTop: 6, marginBottom: 4, color: '#cdb4db' }}>Leaderboard</div>
+-                    {recap.leaderboard.slice(0, 3).map((a, i) => (
+-                        <div key={i} style={{ fontSize: 10, marginBottom: 4, color: '#efe1ff' }}>
+-                            {i + 1}. {a.name} ({Math.round(a.impact * 100)} impact)
+-                        </div>
+-                    ))}
++                    <p className="ao-item-body"><strong>{recap.outcomeCard.title}:</strong> {recap.outcomeCard.summary}</p>
++                    <p className="ao-meta">Active alliances and rivalries: {recap.outcomeCard.activeRelationships}</p>
++                    <span className="ao-eyebrow">Top highlights</span>
++                    <ul className="ao-list">
++                        {recap.topHighlights.slice(0, 3).map((h, i) => (
++                            <li key={i} className="ao-item"><span className="ao-item-title">{h.title}</span></li>
++                        ))}
++                    </ul>
++                    <span className="ao-eyebrow">Leaderboard</span>
++                    <ol className="ao-list">
++                        {recap.leaderboard.slice(0, 3).map((a, i) => (
++                            <li key={i} className="ao-item">
++                                <div className="ao-item-row"><span>{i + 1}. <Who name={a.name} /></span><span className="ao-meta">{Math.round(a.impact * 100)} impact</span></div>
++                            </li>
++                        ))}
++                    </ol>
+                 </>
+             )}
+         </FloatingPanel>
+diff --git a/packages/ui/src/components/FloatingPanel.tsx b/packages/ui/src/components/FloatingPanel.tsx
+index cd208bb..5438a06 100644
+--- a/packages/ui/src/components/FloatingPanel.tsx
++++ b/packages/ui/src/components/FloatingPanel.tsx
+@@ -12,6 +12,9 @@ interface FloatingPanelProps {
+     zIndex?: number;
+     children: React.ReactNode;
+     subtitle?: string;
++    onMinimizedChange?: (minimized: boolean) => void;
++    /** Stacked in the left dock (normal flow, not draggable) instead of floating. */
++    docked?: boolean;
+ }
+ 
+ function clampPosition(pos: Position, width: number): Position {
+@@ -33,9 +36,11 @@ export function FloatingPanel({
+     defaultMinimized = false,
+     zIndex = 14,
+     subtitle,
++    onMinimizedChange,
++    docked = false,
+     children
+ }: FloatingPanelProps) {
+-    const storageKey = useMemo(() => `panel:${id}:state`, [id]);
++    const storageKey = useMemo(() => `panel:v2:${id}:state`, [id]);
+ 
+     const [position, setPosition] = useState<Position>(() => {
+         if (typeof window === 'undefined') return { x: 20, y: defaultY };
+@@ -68,6 +73,10 @@ export function FloatingPanel({
+         return defaultMinimized;
+     });
+ 
++    useEffect(() => {
++        onMinimizedChange?.(minimized);
++    }, [minimized, onMinimizedChange]);
++
+     const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
+ 
+     useEffect(() => {
+@@ -98,22 +107,15 @@ export function FloatingPanel({
+     }, [dragOffset, width]);
+ 
+     return (
+-        <div style={{
+-            position: 'absolute',
+-            left: position.x,
+-            top: position.y,
+-            width,
+-            zIndex,
+-            borderRadius: 12,
+-            overflow: 'hidden',
+-            border: '1px solid rgba(255,255,255,0.2)',
+-            backgroundColor: 'rgba(7, 10, 20, 0.86)',
+-            color: '#f4f8ff',
+-            boxShadow: '0 10px 26px rgba(0,0,0,0.42)',
+-            backdropFilter: 'blur(6px)'
+-        }}>
++        <section
++            className={docked ? 'ao-panel is-docked' : 'ao-panel'}
++            style={docked ? undefined : { left: position.x, top: position.y, width, zIndex }}
++            aria-label={title}
++        >
+             <div
++                className={minimized ? 'ao-panel-head is-min' : 'ao-panel-head'}
+                 onMouseDown={(event) => {
++                    if (docked) return;
+                     const target = event.target as HTMLElement;
+                     if (target.closest('button') || target.closest('input') || target.closest('select')) {
+                         return;
+@@ -123,31 +125,17 @@ export function FloatingPanel({
+                         dy: event.clientY - position.y
+                     });
+                 }}
+-                style={{
+-                    cursor: 'grab',
+-                    padding: '9px 10px',
+-                    display: 'flex',
+-                    alignItems: 'center',
+-                    justifyContent: 'space-between',
+-                    borderBottom: minimized ? 'none' : '1px solid rgba(255,255,255,0.1)',
+-                    background: 'linear-gradient(90deg, rgba(28,33,71,0.8), rgba(72,31,51,0.65))'
+-                }}
+             >
+                 <div>
+-                    <div style={{ fontSize: 12, fontWeight: 700 }}>{title}</div>
+-                    {subtitle && <div style={{ fontSize: 10, opacity: 0.75 }}>{subtitle}</div>}
++                    <h2 className="ao-panel-title">{title}</h2>
++                    {subtitle && <div className="ao-panel-sub">{subtitle}</div>}
+                 </div>
+                 <button
++                    type="button"
++                    className="ao-btn ao-icon-btn"
+                     onClick={() => setMinimized((value) => !value)}
+-                    style={{
+-                        border: '1px solid rgba(255,255,255,0.2)',
+-                        borderRadius: 6,
+-                        width: 24,
+-                        height: 22,
+-                        cursor: 'pointer',
+-                        color: '#f4f8ff',
+-                        background: 'rgba(255,255,255,0.08)'
+-                    }}
++                    aria-label={minimized ? `Expand ${title}` : `Minimize ${title}`}
++                    aria-expanded={!minimized}
+                     title={minimized ? 'Expand panel' : 'Minimize panel'}
+                 >
+                     {minimized ? '+' : '-'}
+@@ -155,10 +143,10 @@ export function FloatingPanel({
+             </div>
+ 
+             {!minimized && (
+-                <div style={{ padding: 10 }}>
++                <div className="ao-panel-body">
+                     {children}
+                 </div>
+             )}
+-        </div>
++        </section>
+     );
+ }
+diff --git a/packages/ui/src/components/HighlightsFeed.tsx b/packages/ui/src/components/HighlightsFeed.tsx
+index 8df1108..c291583 100644
+--- a/packages/ui/src/components/HighlightsFeed.tsx
++++ b/packages/ui/src/components/HighlightsFeed.tsx
+@@ -21,7 +21,7 @@ export function HighlightsFeed() {
+                 const next = [{
+                     id: idRef.current++,
+                     type: detail.type || 'event',
+-                    title: detail.title || 'Office Moment',
++                    title: detail.title || 'Office moment',
+                     body: detail.body || '',
+                     time: new Date().toLocaleTimeString()
+                 }, ...prev];
+@@ -36,29 +36,24 @@ export function HighlightsFeed() {
+     return (
+         <FloatingPanel
+             id="highlight-feed"
+-            title="Highlight Timeline"
+-            subtitle="Live dramatic moments"
+-            width={320}
+-            defaultDock="right"
+-            defaultY={430}
++            title="Highlights"
++            subtitle="Moments worth a look"
++            width={300}
++            defaultDock="left"
++            defaultMinimized
++            docked
+             zIndex={15}
+         >
+-            {items.length === 0 && (
+-                <div style={{ fontSize: 11, color: '#8ca4d6' }}>Waiting for dramatic moments...</div>
+-            )}
+-            {items.map((item) => (
+-                <div key={item.id} style={{
+-                    marginBottom: 8,
+-                    paddingBottom: 8,
+-                    borderBottom: '1px solid rgba(255,255,255,0.08)'
+-                }}>
+-                    <div style={{ fontSize: 10, color: '#9bb3da', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+-                        {item.type} • {item.time}
+-                    </div>
+-                    <div style={{ fontSize: 12, fontWeight: 700, marginTop: 2 }}>{item.title}</div>
+-                    <div style={{ fontSize: 11, color: '#d4def2', marginTop: 2 }}>{item.body}</div>
+-                </div>
+-            ))}
++            {items.length === 0 && <p className="ao-empty">No highlights yet.</p>}
++            <ul className="ao-list">
++                {items.map((item) => (
++                    <li key={item.id} className="ao-item">
++                        <span className="ao-meta">{item.type} · {item.time}</span>
++                        <span className="ao-item-title">{item.title}</span>
++                        {item.body && <span className="ao-item-body">{item.body}</span>}
++                    </li>
++                ))}
++            </ul>
+         </FloatingPanel>
+     );
+ }
+diff --git a/packages/ui/src/components/LayoutEditor.tsx b/packages/ui/src/components/LayoutEditor.tsx
+index dc37c54..0742420 100644
+--- a/packages/ui/src/components/LayoutEditor.tsx
++++ b/packages/ui/src/components/LayoutEditor.tsx
+@@ -1,6 +1,7 @@
+-import React, { useEffect, useState } from 'react';
++import React, { useCallback, useEffect, useState } from 'react';
+ import { getColyseusRoom } from '../game/Game';
+ import { eventBus } from '../events';
++import { FloatingPanel } from './FloatingPanel';
+ 
+ interface FurnitureItem {
+     id: string;
+@@ -10,18 +11,19 @@ interface FurnitureItem {
+     label?: string;
+ }
+ 
+-const FURNITURE_PALETTE: { type: FurnitureItem['type']; emoji: string; label: string }[] = [
+-    { type: 'desk', emoji: '🖥️', label: 'Desk' },
+-    { type: 'plant', emoji: '🌿', label: 'Plant' },
+-    { type: 'bookshelf', emoji: '📚', label: 'Bookshelf' },
+-    { type: 'coffee_machine', emoji: '☕', label: 'Coffee' },
+-    { type: 'table', emoji: '🪑', label: 'Table' },
+-    { type: 'chair', emoji: '💺', label: 'Chair' },
+-    { type: 'whiteboard', emoji: '📝', label: 'Board' },
++const FURNITURE_PALETTE: { type: FurnitureItem['type']; label: string }[] = [
++    { type: 'desk', label: 'Desk' },
++    { type: 'plant', label: 'Plant' },
++    { type: 'bookshelf', label: 'Bookshelf' },
++    { type: 'coffee_machine', label: 'Coffee' },
++    { type: 'table', label: 'Table' },
++    { type: 'chair', label: 'Chair' },
++    { type: 'whiteboard', label: 'Board' },
+ ];
+ 
+ export function LayoutEditor() {
+     const [isOpen, setIsOpen] = useState(false);
++    const onMinimizedChange = useCallback((minimized: boolean) => setIsOpen(!minimized), []);
+     const [items, setItems] = useState<FurnitureItem[]>([]);
+     const [selected, setSelected] = useState<FurnitureItem['type']>('desk');
+     const [moveMode, setMoveMode] = useState(true);
+@@ -90,104 +92,60 @@ export function LayoutEditor() {
+         }
+     };
+ 
+-    if (!isOpen) {
+-        return (
+-            <button
+-                onClick={() => setIsOpen(true)}
+-                style={{
+-                    position: 'absolute', left: 20, bottom: 80,
+-                    padding: '8px 16px', borderRadius: 8, border: 'none',
+-                    backgroundColor: '#6c5ce7', color: 'white',
+-                    cursor: 'pointer', fontSize: '12px', fontWeight: 'bold',
+-                    boxShadow: '0 4px 12px rgba(108,92,231,0.4)',
+-                    zIndex: 10
+-                }}
+-            >
+-                🏗️ Layout Editor
+-            </button>
+-        );
+-    }
++    const selectedLabel = FURNITURE_PALETTE.find(f => f.type === selected)?.label;
+ 
+     return (
+-        <div style={{
+-            position: 'absolute', left: 20, bottom: 20, width: 280,
+-            backgroundColor: 'rgba(10,10,30,0.95)', color: 'white',
+-            padding: 16, borderRadius: 12,
+-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+-            border: '1px solid rgba(108,92,231,0.3)',
+-            maxHeight: '40vh', display: 'flex', flexDirection: 'column',
+-            zIndex: 20
+-        }}>
+-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+-                <h3 style={{ margin: 0, fontSize: '14px' }}>🏗️ Office Layout Editor</h3>
+-                <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+-            </div>
+-
+-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '11px', marginBottom: 8, color: '#c9cff8' }}>
++        <FloatingPanel
++            id="layout-editor"
++            title="Layout editor"
++            subtitle="Place and move furniture"
++            width={300}
++            defaultDock="left"
++            defaultMinimized
++            docked
++            zIndex={12}
++            onMinimizedChange={onMinimizedChange}
++        >
++            <label className="ao-check">
+                 <input type="checkbox" checked={moveMode} onChange={(e) => setMoveMode(e.target.checked)} />
+-                Drag items with mouse on canvas
++                Drag items on the map
+             </label>
+ 
+-            {/* Furniture Palette */}
+-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
++            <div className="ao-wrap" role="group" aria-label="Furniture">
+                 {FURNITURE_PALETTE.map(f => (
+                     <button
+                         key={f.type}
++                        type="button"
++                        className={selected === f.type ? 'ao-btn ao-btn-sm is-on' : 'ao-btn ao-btn-sm'}
++                        aria-pressed={selected === f.type}
+                         onClick={() => setSelected(f.type)}
+-                        style={{
+-                            padding: '4px 8px', borderRadius: 6, border: 'none',
+-                            backgroundColor: selected === f.type ? '#6c5ce7' : '#2d2d4d',
+-                            color: 'white', cursor: 'pointer', fontSize: '11px'
+-                        }}
+                     >
+-                        {f.emoji} {f.label}
++                        {f.label}
+                     </button>
+                 ))}
+             </div>
+ 
+-            <button onClick={addItem} style={{
+-                padding: '6px', borderRadius: 6, border: 'none',
+-                backgroundColor: '#00b894', color: 'white', cursor: 'pointer',
+-                fontSize: '11px', fontWeight: 'bold', marginBottom: 8
+-            }}>
+-                + Add {FURNITURE_PALETTE.find(f => f.type === selected)?.label}
+-            </button>
+-
+-            {/* Item List */}
+-            <div style={{ flex: 1, overflowY: 'auto', fontSize: '11px', marginBottom: 8 }}>
+-                {items.length === 0 && (
+-                    <p style={{ color: '#555', fontStyle: 'italic', margin: 0 }}>
+-                        Select furniture type and click Add to place items.
+-                    </p>
+-                )}
++            <button type="button" className="ao-btn" onClick={addItem}>Add {selectedLabel}</button>
++
++            {items.length === 0 && <p className="ao-empty">Pick a furniture type and add it to the map.</p>}
++            <ul className="ao-list">
+                 {items.map(item => (
+-                    <div key={item.id} style={{
+-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+-                        padding: '4px 6px', marginBottom: 2, borderRadius: 4,
+-                        backgroundColor: 'rgba(255,255,255,0.05)'
+-                    }}>
+-                        <span>{FURNITURE_PALETTE.find(f => f.type === item.type)?.emoji} {item.label} ({Math.round(item.x)},{Math.round(item.y)})</span>
+-                        <div style={{ display: 'flex', gap: 2 }}>
+-                            <button onClick={() => nudgeItem(item.id, -1, 0)} style={{ background: 'none', border: 'none', color: '#8ecae6', cursor: 'pointer', fontSize: '11px' }}>◀</button>
+-                            <button onClick={() => nudgeItem(item.id, 1, 0)} style={{ background: 'none', border: 'none', color: '#8ecae6', cursor: 'pointer', fontSize: '11px' }}>▶</button>
+-                            <button onClick={() => nudgeItem(item.id, 0, -1)} style={{ background: 'none', border: 'none', color: '#8ecae6', cursor: 'pointer', fontSize: '11px' }}>▲</button>
+-                            <button onClick={() => nudgeItem(item.id, 0, 1)} style={{ background: 'none', border: 'none', color: '#8ecae6', cursor: 'pointer', fontSize: '11px' }}>▼</button>
+-                            <button onClick={() => removeItem(item.id)} style={{
+-                                background: 'none', border: 'none', color: '#e17055',
+-                                cursor: 'pointer', fontSize: '12px'
+-                            }}>🗑</button>
++                    <li key={item.id} className="ao-item">
++                        <div className="ao-item-row">
++                            <span className="ao-item-title">{item.label} <span className="ao-meta">{Math.round(item.x)},{Math.round(item.y)}</span></span>
++                            <span className="ao-row">
++                                <button type="button" className="ao-btn ao-btn-sm" aria-label="Move left" onClick={() => nudgeItem(item.id, -1, 0)}>&lt;</button>
++                                <button type="button" className="ao-btn ao-btn-sm" aria-label="Move right" onClick={() => nudgeItem(item.id, 1, 0)}>&gt;</button>
++                                <button type="button" className="ao-btn ao-btn-sm" aria-label="Move up" onClick={() => nudgeItem(item.id, 0, -1)}>^</button>
++                                <button type="button" className="ao-btn ao-btn-sm" aria-label="Move down" onClick={() => nudgeItem(item.id, 0, 1)}>v</button>
++                                <button type="button" className="ao-btn ao-btn-sm ao-btn-danger" aria-label={`Remove ${item.label}`} onClick={() => removeItem(item.id)}>Remove</button>
++                            </span>
+                         </div>
+-                    </div>
++                    </li>
+                 ))}
+-            </div>
++            </ul>
+ 
+-            <button onClick={saveLayout} style={{
+-                padding: '8px', borderRadius: 6, border: 'none',
+-                backgroundColor: '#6c5ce7', color: 'white', cursor: 'pointer',
+-                fontSize: '12px', fontWeight: 'bold'
+-            }}>
+-                💾 Save Layout
+-            </button>
+-        </div>
++            <button type="button" className="ao-btn ao-btn-primary" onClick={saveLayout}>Save layout</button>
++        </FloatingPanel>
+     );
+ }
+diff --git a/packages/ui/src/components/RelationshipGraph.tsx b/packages/ui/src/components/RelationshipGraph.tsx
+index 5f4280a..1d0a063 100644
+--- a/packages/ui/src/components/RelationshipGraph.tsx
++++ b/packages/ui/src/components/RelationshipGraph.tsx
+@@ -1,6 +1,7 @@
+ import React, { useEffect, useMemo, useState } from 'react';
+ import { eventBus } from '../events';
+ import { FloatingPanel } from './FloatingPanel';
++import { PixelIcon, Who } from './ui';
+ 
+ type Edge = {
+     a: string;
+@@ -31,33 +32,32 @@ export function RelationshipGraph() {
+     return (
+         <FloatingPanel
+             id="relationship-graph"
+-            title="Relationship Graph"
++            title="Relationships"
+             subtitle="Alliances and rivalries"
+             width={300}
+-            defaultDock="right"
+-            defaultY={220}
++            defaultDock="left"
++            defaultMinimized
++            docked
+             zIndex={16}
+         >
+-            {visible.length === 0 && (
+-                <div style={{ fontSize: 11, color: '#cdbca4' }}>No strong alliances or rivalries yet.</div>
+-            )}
+-            {visible.map((edge, idx) => {
+-                const isAlliance = edge.status === 'alliance';
+-                return (
+-                    <div key={idx} style={{
+-                        marginBottom: 7,
+-                        paddingBottom: 7,
+-                        borderBottom: '1px solid rgba(255,255,255,0.08)'
+-                    }}>
+-                        <div style={{ fontSize: 11, fontWeight: 700, color: isAlliance ? '#b9fbc0' : '#ffadad' }}>
+-                            {edge.aName} {isAlliance ? '🤝' : '⚔️'} {edge.bName}
+-                        </div>
+-                        <div style={{ fontSize: 10, color: '#f9e7d0' }}>
+-                            {edge.status} ({Math.round(Math.abs(edge.score) * 100)} intensity)
+-                        </div>
+-                    </div>
+-                );
+-            })}
++            {visible.length === 0 && <p className="ao-empty">No strong alliances or rivalries yet.</p>}
++            <ul className="ao-list">
++                {visible.map((edge, idx) => {
++                    const isAlliance = edge.status === 'alliance';
++                    return (
++                        <li key={idx} className="ao-item">
++                            <div className="ao-item-row">
++                                <span><Who name={edge.aName} /> and <Who name={edge.bName} /></span>
++                                <span className={isAlliance ? 'ao-rel is-alliance' : 'ao-rel is-rivalry'}>
++                                    <PixelIcon name={isAlliance ? 'completed' : 'failed'} size={8} />
++                                    {isAlliance ? 'Alliance' : 'Rivalry'}
++                                </span>
++                            </div>
++                            <span className="ao-meta">Intensity {Math.round(Math.abs(edge.score) * 100)}</span>
++                        </li>
++                    );
++                })}
++            </ul>
+         </FloatingPanel>
+     );
+ }
+diff --git a/packages/ui/src/components/SystemLog.tsx b/packages/ui/src/components/SystemLog.tsx
+index b9262ad..4bdb65a 100644
+--- a/packages/ui/src/components/SystemLog.tsx
++++ b/packages/ui/src/components/SystemLog.tsx
+@@ -1,5 +1,7 @@
+ import React, { useState, useEffect, useRef } from 'react';
+ import { eventBus } from '../events';
++import { FloatingPanel } from './FloatingPanel';
++import { PixelIcon, PixelIconName, Who } from './ui';
+ 
+ interface LogEntry {
+     id: number;
+@@ -9,14 +11,13 @@ interface LogEntry {
+     time: string;
+ }
+ 
+-const actionIcons: Record<string, string> = {
+-    'work': '💻', 'talk': '💬', 'idle': '😌',
+-    'use_tool': '🔧', 'move': '🚶', 'think': '💡'
++const ACTION_ICONS: Record<string, PixelIconName> = {
++    work: 'working', use_tool: 'working', talk: 'waiting',
++    think: 'planning', move: 'reviewing', idle: 'idle'
+ };
+ 
+ export function SystemLog() {
+     const [logs, setLogs] = useState<LogEntry[]>([]);
+-    const [isOpen, setIsOpen] = useState(true);
+     const scrollRef = useRef<HTMLDivElement>(null);
+     const idRef = useRef(0);
+ 
+@@ -47,57 +48,23 @@ export function SystemLog() {
+         }
+     }, [logs]);
+ 
+-    if (!isOpen) {
+-        return (
+-            <button
+-                onClick={() => setIsOpen(true)}
+-                style={{
+-                    position: 'absolute', right: 20, top: 20,
+-                    padding: '6px 12px', borderRadius: 8, border: 'none',
+-                    backgroundColor: '#2d3436', color: '#aaa',
+-                    cursor: 'pointer', fontSize: '11px', zIndex: 10
+-                }}
+-            >
+-                📊 Activity Log
+-            </button>
+-        );
+-    }
+-
+     return (
+-        <div style={{
+-            position: 'absolute', right: 20, top: 20, width: 260,
+-            backgroundColor: 'rgba(10,10,30,0.92)', color: 'white',
+-            padding: 12, borderRadius: 12,
+-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+-            border: '1px solid rgba(108,92,231,0.3)',
+-            maxHeight: '35vh', display: 'flex', flexDirection: 'column',
+-            zIndex: 10
+-        }}>
+-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+-                <h3 style={{ margin: 0, fontSize: '13px' }}>📊 System Activity Log</h3>
+-                <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '14px' }}>✕</button>
+-            </div>
+-
+-            <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', fontSize: '10px', lineHeight: 1.5 }}>
+-                {logs.length === 0 && (
+-                    <p style={{ color: '#555', fontStyle: 'italic', margin: 0 }}>Waiting for agent events...</p>
+-                )}
+-                {logs.map(log => (
+-                    <div key={log.id} style={{
+-                        padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.04)',
+-                        display: 'flex', gap: 4, alignItems: 'flex-start'
+-                    }}>
+-                        <span style={{ opacity: 0.4, minWidth: 48 }}>{log.time}</span>
+-                        <span>{actionIcons[log.action] || '•'}</span>
+-                        <span>
+-                            <strong style={{ color: log.agent === 'Alice' ? '#aaffaa' : '#3a86ff' }}>{log.agent}</strong>
+-                            {' '}
+-                            <span style={{ color: '#888' }}>{log.action}</span>
+-                            {log.thought && <span style={{ color: '#666', fontStyle: 'italic' }}> — "{log.thought.slice(0, 60)}"</span>}
+-                        </span>
+-                    </div>
+-                ))}
++        <FloatingPanel id="activity-log" title="Activity log" subtitle="What each agent is doing" width={300} defaultDock="right" defaultY={20} zIndex={14}>
++            <div ref={scrollRef} className="ao-log" aria-live="polite">
++                {logs.length === 0 && <p className="ao-empty">No agent activity yet.</p>}
++                <ul className="ao-list">
++                    {logs.map(log => (
++                        <li key={log.id} className="ao-item">
++                            <span className="ao-log-time">{log.time}</span>
++                            <PixelIcon name={ACTION_ICONS[log.action] ?? 'idle'} size={8} />
++                            <span>
++                                <Who name={log.agent} /> {log.action}
++                                {log.thought && <span className="ao-quote"> "{log.thought.slice(0, 60)}"</span>}
++                            </span>
++                        </li>
++                    ))}
++                </ul>
+             </div>
+-        </div>
++        </FloatingPanel>
+     );
+ }
 diff --git a/packages/ui/src/components/TaskBoard.tsx b/packages/ui/src/components/TaskBoard.tsx
-index e2b862c..4ce75e5 100644
+index e2b862c..916ec43 100644
 --- a/packages/ui/src/components/TaskBoard.tsx
 +++ b/packages/ui/src/components/TaskBoard.tsx
 @@ -11,7 +11,9 @@ interface TaskItem {
@@ -344,7 +1189,7 @@ index e2b862c..4ce75e5 100644
                  room.onMessage('tasks-sync', (serverTasks: any[]) => {
                      setTasks(serverTasks.map(t => ({
                          id: t.id,
-@@ -45,7 +49,7 @@ export function TaskBoard() {
+@@ -45,101 +49,79 @@ export function TaskBoard() {
          if (!newTask.trim()) return;
          const room = getColyseusRoom();
          if (room) {
@@ -353,76 +1198,501 @@ index e2b862c..4ce75e5 100644
              setNewTask('');
          }
      };
-@@ -53,12 +57,14 @@ export function TaskBoard() {
-     const statusColor = (s: string) => {
-         if (s === 'completed') return '#00b894';
-         if (s === 'in_progress') return '#fdcb6e';
-+        if (s === 'blocked') return '#d63031';
-         return '#dfe6e9';
+ 
+-    const statusColor = (s: string) => {
+-        if (s === 'completed') return '#00b894';
+-        if (s === 'in_progress') return '#fdcb6e';
+-        return '#dfe6e9';
++    // Agent Office state badges: icon plus word, colors from the theme tokens (office/theme/agent-office.css).
++    const BADGES: Record<string, { cls: string; word: string; icon: string }> = {
++        pending: { cls: 's-queued', word: 'Queued', icon: 'M0 0h5v1h-5zM4 1h1v1h-1zM3 2h1v1h-1zM2 3h1v1h-1zM1 4h1v1h-1zM0 5h5v1h-5z' },
++        in_progress: { cls: 's-working', word: 'Working', icon: 'M0 0h1v1h-1zM2 0h3v1h-3zM6 0h1v1h-1zM1 1h5v1h-5zM0 2h3v1h-3zM4 2h3v1h-3zM0 3h2v1h-2zM5 3h2v1h-2zM0 4h3v1h-3zM4 4h3v1h-3zM1 5h5v1h-5zM0 6h1v1h-1zM2 6h3v1h-3zM6 6h1v1h-1z' },
++        completed: { cls: 's-completed', word: 'Completed', icon: 'M6 1h1v1h-1zM5 2h2v1h-2zM0 3h1v1h-1zM4 3h2v1h-2zM0 4h2v1h-2zM3 4h2v1h-2zM1 5h3v1h-3zM2 6h1v1h-1z' },
++        blocked: { cls: 's-blocked', word: 'Blocked', icon: 'M2 0h3v1h-3zM1 1h1v1h-1zM5 1h1v1h-1zM1 2h1v1h-1zM5 2h1v1h-1zM0 3h7v1h-7zM0 4h3v1h-3zM4 4h3v1h-3zM0 5h3v1h-3zM4 5h3v1h-3zM0 6h7v1h-7z' },
      };
  
-     const statusIcon = (s: string) => {
-         if (s === 'completed') return '✅';
-         if (s === 'in_progress') return '🔄';
-+        if (s === 'blocked') return '⛔';
-         return '⏳';
+-    const statusIcon = (s: string) => {
+-        if (s === 'completed') return '✅';
+-        if (s === 'in_progress') return '🔄';
+-        return '⏳';
++    const statusBadge = (s: string) => {
++        const b = BADGES[s] ?? BADGES.pending;
++        return (
++            <span className={`ao-badge ${b.cls}`}>
++                <svg width="12" height="12" viewBox="0 0 7 7" fill="currentColor" shapeRendering="crispEdges" aria-hidden="true"><path d={b.icon} /></svg>
++                {b.word}
++            </span>
++        );
      };
  
-@@ -77,7 +83,7 @@ export function TaskBoard() {
-             </h3>
+     return (
+-        <div style={{
+-            position: 'absolute', left: 20, top: 20, width: 280,
+-            backgroundColor: 'rgba(10,10,30,0.92)', color: 'white',
+-            padding: 16, borderRadius: 12,
+-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+-            backdropFilter: 'blur(8px)',
+-            border: '1px solid rgba(108,92,231,0.3)',
+-            maxHeight: '50vh', display: 'flex', flexDirection: 'column'
+-        }}>
+-            <h3 style={{ margin: '0 0 10px 0', fontSize: '14px', display: 'flex', alignItems: 'center', gap: 6 }}>
+-                📋 Task Board
+-            </h3>
++        <section className="ao-panel ao-taskboard" aria-labelledby="ao-taskboard-title">
++            <h2 id="ao-taskboard-title" className="ao-panel-title">Task board</h2>
  
-             {/* Task Assignment Form */}
+-            {/* Task Assignment Form */}
 -            <form onSubmit={handleSubmit} style={{ marginBottom: 10 }}>
-+            {!readonly && <form onSubmit={handleSubmit} style={{ marginBottom: 10 }}>
++            {!readonly && <form className="ao-form" onSubmit={handleSubmit}>
++                <label className="ao-eyebrow" htmlFor="ao-task-title">New task</label>
                  <input
++                    id="ao-task-title"
++                    className="ao-field"
                      type="text"
                      value={newTask}
-@@ -100,9 +106,10 @@ export function TaskBoard() {
-                             color: '#aaa', fontSize: '11px'
-                         }}
+                     onChange={(e) => setNewTask(e.target.value)}
+-                    placeholder="Assign a task..."
+-                    style={{
+-                        width: '100%', padding: '8px 10px', borderRadius: 6,
+-                        border: '1px solid #444', backgroundColor: '#1a1a3e',
+-                        color: 'white', fontSize: '12px', outline: 'none',
+-                        boxSizing: 'border-box', marginBottom: 6
+-                    }}
++                    placeholder="Explorer: test Missions screen"
+                 />
+-                <div style={{ display: 'flex', gap: 6 }}>
++                <div className="ao-row">
+                     <select
++                        className="ao-field"
++                        aria-label="Agent"
+                         value={targetAgent}
+                         onChange={(e) => setTargetAgent(e.target.value)}
+-                        style={{
+-                            flex: 1, padding: '6px', borderRadius: 6,
+-                            border: '1px solid #444', backgroundColor: '#1a1a3e',
+-                            color: '#aaa', fontSize: '11px'
+-                        }}
                      >
 -                        <option value="auto">🤖 Auto-assign</option>
 -                        <option value="alice">Alice (Engineer)</option>
 -                        <option value="bob">Bob (PM)</option>
-+                        <option value="player-alpha">Alpha (QA Player)</option>
-+                        <option value="explorer">Explorer (QA Explorer)</option>
-+                        <option value="qa-analyst">Analyst (QA Analyst)</option>
-+                        <option value="design-critic">Critic (Design Critic)</option>
++                        <option value="player-alpha">Player Alpha (QA player)</option>
++                        <option value="explorer">Explorer (QA explorer)</option>
++                        <option value="qa-analyst">QA Analyst</option>
++                        <option value="design-critic">Design Critic</option>
                      </select>
-                     <button type="submit" style={{
-                         padding: '6px 14px', borderRadius: 6, border: 'none',
-@@ -112,7 +119,7 @@ export function TaskBoard() {
-                         Assign
-                     </button>
+-                    <button type="submit" style={{
+-                        padding: '6px 14px', borderRadius: 6, border: 'none',
+-                        backgroundColor: '#6c5ce7', color: 'white', fontSize: '11px',
+-                        cursor: 'pointer', fontWeight: 'bold'
+-                    }}>
+-                        Assign
+-                    </button>
++                    <button type="submit" className="ao-btn ao-btn-primary">Assign</button>
                  </div>
 -            </form>
 +            </form>}
  
-             {/* Task List */}
-             <div style={{ flex: 1, overflowY: 'auto', fontSize: '12px' }}>
-@@ -137,8 +144,15 @@ export function TaskBoard() {
+-            {/* Task List */}
+-            <div style={{ flex: 1, overflowY: 'auto', fontSize: '12px' }}>
++            <ul className="ao-tasks">
+                 {tasks.length === 0 && (
+-                    <p style={{ color: '#666', fontStyle: 'italic', margin: 0, fontSize: '11px' }}>
+-                        No tasks yet. Type above to assign work to agents!
+-                    </p>
++                    <li><p className="ao-empty">No tasks yet. Assign one above and the agent takes its desk.</p></li>
+                 )}
+                 {tasks.map(task => (
+-                    <div key={task.id} style={{
+-                        padding: '6px 8px', marginBottom: 4, borderRadius: 6,
+-                        backgroundColor: 'rgba(255,255,255,0.05)',
+-                        borderLeft: `3px solid ${statusColor(task.status)}`
+-                    }}>
+-                        <div style={{ fontWeight: 'bold', fontSize: '11px' }}>
+-                            {statusIcon(task.status)} {task.title}
+-                        </div>
+-                        <div style={{ fontSize: '10px', color: '#888', marginTop: 2 }}>
+-                            → {task.assigned_to || 'Unassigned'}
+-                        </div>
+-                    </div>
++                    <li key={task.id} className="ao-task">
++                        <span className="ao-task-title">{task.title}</span>
++                        <span className="ao-task-meta">{statusBadge(task.status)}{task.assigned_to || 'Unassigned'}</span>
++                    </li>
                  ))}
-             </div>
+-            </div>
++            </ul>
  
 -            <div style={{ marginTop: 8, fontSize: '10px', color: '#555', borderTop: '1px solid #333', paddingTop: 6 }}>
 -                🤖 Engine: Ollama Local • 💾 SQLite Persistence
-+            <div style={{ marginTop: 8, fontSize: '10px', color: '#888', borderTop: '1px solid #333', paddingTop: 6 }}>
++            <div className="ao-foot">
 +                {Object.entries(metrics).map(([id, m]) => (
-+                    <div key={id}>
-+                        {id}: ✅ {m.tasksCompleted} · ⛔ {m.tasksBlocked} · {m.tokensUsed} tok · rep {m.reputation.toFixed(2)}
-+                    </div>
++                    <span key={id}>
++                        {id}: {m.tasksCompleted} completed · {m.tasksBlocked} blocked · {m.tokensUsed} tokens · reputation {m.reputation.toFixed(2)}
++                    </span>
 +                ))}
-+                <div style={{ color: '#555', marginTop: 4 }}>
-+                    🤖 Engine: Ollama Local • 💾 SQLite Persistence{readonly ? ' • 👁 Read-only' : ''}
-+                </div>
++                <span>Report text: local providers · SQLite memory{readonly ? ' · ' : ''}{readonly && <span className="ao-badge ao-chip-readonly">Read-only</span>}</span>
              </div>
-         </div>
+-        </div>
++        </section>
      );
+ }
+diff --git a/packages/ui/src/components/ViralControlPanel.tsx b/packages/ui/src/components/ViralControlPanel.tsx
+index cb65709..da8e6fa 100644
+--- a/packages/ui/src/components/ViralControlPanel.tsx
++++ b/packages/ui/src/components/ViralControlPanel.tsx
+@@ -59,7 +59,7 @@ export function ViralControlPanel() {
+             });
+             const data = await response.json();
+             if (data?.ok) {
+-                setVoteStatus(`${eventId}: ${data.tally} votes${data.triggered ? ' (TRIGGERED)' : ''}`);
++                setVoteStatus(`${eventId}: ${data.tally} votes${data.triggered ? ' (triggered)' : ''}`);
+             } else {
+                 setVoteStatus('Vote failed');
+             }
+@@ -71,100 +71,40 @@ export function ViralControlPanel() {
+     return (
+         <FloatingPanel
+             id="viral-control"
+-            title="Showrunner Controls"
+-            subtitle="Viral Mode Console"
+-            width={330}
+-            defaultDock="right"
+-            defaultY={20}
++            title="Showrunner"
++            subtitle="Scenarios and office events"
++            width={300}
++            defaultDock="left"
++            defaultMinimized
++            docked
+             zIndex={18}
+         >
+-            <div style={{ fontSize: 11, color: '#babedc', marginTop: 8, marginBottom: 10 }}>
+-                Last event: <strong style={{ color: '#ffd6a5' }}>{lastEvent}</strong>
+-            </div>
++            <p className="ao-meta">Last event: <strong>{lastEvent}</strong></p>
+ 
+-            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+-                <select
+-                    value={scenario}
+-                    onChange={(e) => setScenario(e.target.value)}
+-                    style={{
+-                        flex: 1,
+-                        background: '#181f45',
+-                        color: '#fff',
+-                        borderRadius: 8,
+-                        border: '1px solid rgba(255,255,255,0.2)',
+-                        padding: '8px 10px',
+-                        fontSize: 12
+-                    }}
+-                >
++            <div className="ao-row">
++                <select className="ao-field" aria-label="Scenario" value={scenario} onChange={(e) => setScenario(e.target.value)}>
+                     {SCENARIOS.map((item) => (
+                         <option key={item} value={item}>{item}</option>
+                     ))}
+                 </select>
+-                <button
+-                    onClick={startScenario}
+-                    style={{
+-                        border: 'none',
+-                        borderRadius: 8,
+-                        padding: '8px 12px',
+-                        cursor: 'pointer',
+-                        fontWeight: 700,
+-                        color: '#150f21',
+-                        background: 'linear-gradient(135deg, #ffadad, #ffd6a5)'
+-                    }}
+-                >
+-                    Start
+-                </button>
++                <button type="button" className="ao-btn ao-btn-primary" onClick={startScenario}>Start</button>
+             </div>
+ 
+-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 10 }}>
+-                <input
+-                    type="checkbox"
+-                    checked={cinematicMode}
+-                    onChange={(e) => setCinematicMode(e.target.checked)}
+-                />
+-                Cinematic camera auto-focus
++            <label className="ao-check">
++                <input type="checkbox" checked={cinematicMode} onChange={(e) => setCinematicMode(e.target.checked)} />
++                Camera follows events
+             </label>
+ 
+-            <div style={{ fontSize: 12, marginBottom: 6, color: '#ffcad4' }}>Chaos Buttons</div>
+-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
++            <span className="ao-eyebrow">Office events</span>
++            <div className="ao-chaos">
+                 {CHAOS_EVENTS.map((event) => (
+-                    <div key={event.id} style={{ display: 'flex', gap: 4 }}>
+-                        <button
+-                            onClick={() => triggerChaos(event.id)}
+-                            style={{
+-                                flex: 1,
+-                                border: '1px solid rgba(255,255,255,0.12)',
+-                                background: 'rgba(255,255,255,0.06)',
+-                                color: '#f0f3ff',
+-                                borderRadius: 8,
+-                                padding: '7px 8px',
+-                                cursor: 'pointer',
+-                                fontSize: 11
+-                            }}
+-                        >
+-                            {event.label}
+-                        </button>
+-                        <button
+-                            onClick={() => castVote(event.id)}
+-                            title="Audience vote"
+-                            style={{
+-                                border: '1px solid rgba(255,255,255,0.12)',
+-                                background: 'rgba(255, 214, 165, 0.2)',
+-                                color: '#ffe5c2',
+-                                borderRadius: 8,
+-                                padding: '7px 8px',
+-                                cursor: 'pointer',
+-                                fontSize: 11
+-                            }}
+-                        >
+-                            Vote
+-                        </button>
+-                    </div>
++                    <React.Fragment key={event.id}>
++                        <button type="button" className="ao-btn ao-btn-sm" onClick={() => triggerChaos(event.id)}>{event.label}</button>
++                        <button type="button" className="ao-btn ao-btn-sm" onClick={() => castVote(event.id)} title="Audience vote">Vote</button>
++                    </React.Fragment>
+                 ))}
+             </div>
+-            <div style={{ marginTop: 8, fontSize: 11, color: '#ffd6a5', minHeight: 16 }}>
+-                {voteStatus}
+-            </div>
++            {voteStatus && <p className="ao-meta" aria-live="polite">{voteStatus}</p>}
+         </FloatingPanel>
+     );
+ }
+diff --git a/packages/ui/src/components/ui.tsx b/packages/ui/src/components/ui.tsx
+new file mode 100644
+index 0000000..0b90c97
+--- /dev/null
++++ b/packages/ui/src/components/ui.tsx
+@@ -0,0 +1,32 @@
++import React from 'react';
++
++// Agent Office pixel icons (7x7, from the design system). State is always icon + word + colour, never emoji.
++export const PIXEL_ICONS = {
++    idle: 'M0 0h5v1h-5zM4 1h1v1h-1zM3 2h1v1h-1zM2 3h1v1h-1zM1 4h1v1h-1zM0 5h5v1h-5z',
++    planning: 'M3 0h1v1h-1zM2 1h1v1h-1zM4 1h1v1h-1zM1 2h1v1h-1zM5 2h1v1h-1zM0 3h1v1h-1zM3 3h1v1h-1zM6 3h1v1h-1zM1 4h1v1h-1zM5 4h1v1h-1zM2 5h1v1h-1zM4 5h1v1h-1zM3 6h1v1h-1z',
++    working: 'M0 0h1v1h-1zM2 0h3v1h-3zM6 0h1v1h-1zM1 1h5v1h-5zM0 2h3v1h-3zM4 2h3v1h-3zM0 3h2v1h-2zM5 3h2v1h-2zM0 4h3v1h-3zM4 4h3v1h-3zM1 5h5v1h-5zM0 6h1v1h-1zM2 6h3v1h-3zM6 6h1v1h-1z',
++    waiting: 'M0 0h7v1h-7zM1 1h5v1h-5zM2 2h3v1h-3zM3 3h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM1 5h1v1h-1zM5 5h1v1h-1zM0 6h7v1h-7z',
++    reviewing: 'M1 0h4v1h-4zM0 1h1v1h-1zM5 1h1v1h-1zM0 2h1v1h-1zM5 2h1v1h-1zM0 3h1v1h-1zM5 3h1v1h-1zM1 4h4v1h-4zM4 5h2v1h-2zM5 6h2v1h-2z',
++    completed: 'M6 1h1v1h-1zM5 2h2v1h-2zM0 3h1v1h-1zM4 3h2v1h-2zM0 4h2v1h-2zM3 4h2v1h-2zM1 5h3v1h-3zM2 6h1v1h-1z',
++    failed: 'M0 0h1v1h-1zM6 0h1v1h-1zM1 1h1v1h-1zM5 1h1v1h-1zM2 2h1v1h-1zM4 2h1v1h-1zM3 3h1v1h-1zM2 4h1v1h-1zM4 4h1v1h-1zM1 5h1v1h-1zM5 5h1v1h-1zM0 6h1v1h-1zM6 6h1v1h-1z',
++    live: 'M2 1h3v1h-3zM1 2h5v1h-5zM1 3h5v1h-5zM1 4h5v1h-5zM2 5h3v1h-3z',
++} as const;
++
++export type PixelIconName = keyof typeof PIXEL_ICONS;
++
++export function PixelIcon({ name, size = 10 }: { name: PixelIconName; size?: number }) {
++    return (
++        <svg width={size} height={size} viewBox="0 0 7 7" aria-hidden="true" shapeRendering="crispEdges">
++            <path d={PIXEL_ICONS[name]} fill="currentColor" />
++        </svg>
++    );
++}
++
++const IDENTITIES = ['alpha', 'explorer', 'analyst', 'critic', 'system'];
++
++/** An agent name in its identity colour (tokens --agent-*). Unknown names stay in the text colour. */
++export function Who({ name }: { name: string }) {
++    const key = String(name || '').toLowerCase();
++    const id = IDENTITIES.find((candidate) => key.includes(candidate));
++    return <strong className={id ? `ao-who id-${id}` : 'ao-who'}>{name}</strong>;
++}
 diff --git a/packages/ui/src/game/Game.ts b/packages/ui/src/game/Game.ts
-index b2688da..c19166a 100644
+index b2688da..e0e264b 100644
 --- a/packages/ui/src/game/Game.ts
 +++ b/packages/ui/src/game/Game.ts
-@@ -547,7 +547,7 @@ export class OfficeScene extends Phaser.Scene {
+@@ -3,6 +3,82 @@ import * as Colyseus from 'colyseus.js';
+ import { OfficeState, AgentState } from './schema';
+ import { eventBus } from '../events';
+ 
++// ── Agent Office design (office/theme/agent-office.css) ─────────────────────────────
++// The map keeps its layout; its colours come from the design tokens, so it follows the theme.
++const cssVar = (name: string, fallback: string) => {
++    if (typeof document === 'undefined') return fallback;
++    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
++};
++const toNum = (c: string) => parseInt(c.replace('#', '').slice(0, 6), 16);
++const mix = (a: number, b: number, t: number) => {
++    const ch = (n: number, s: number) => (n >> s) & 0xff;
++    const m = (s: number) => Math.round(ch(a, s) * (1 - t) + ch(b, s) * t) << s;
++    return m(16) | m(8) | m(0);
++};
++const tok = (name: string, fallback: string) => toNum(cssVar(`--${name}`, fallback));
++
++export const DISPLAY_FONT = '"Pixelify Sans", "Courier New", monospace';
++export const UI_FONT = '"Atkinson Hyperlegible", system-ui, sans-serif';
++
++function designPalette(): Map<number, number> {
++    const floor = tok('world-floor', '#5E4532');
++    const wall = tok('wall', '#8F6D4D');
++    const wood = tok('wood', '#A66D3B');
++    const metal = tok('metal', '#8E99A3');
++    const paper = tok('paper', '#EFE3C8');
++    const screen = tok('screen-bg', '#0F1A17');
++    const outline = tok('outline', '#120C08');
++    const accent = tok('accent-primary', '#4DBFB2');
++    const brass = tok('accent-secondary', '#E0A63F');
++    const black = 0x000000, white = 0xffffff;
++    return new Map<number, number>([
++        // floors and rooms
++        [0x2d2d3d, mix(floor, black, 0.25)], [0x33334a, floor], [0x352a45, mix(floor, wall, 0.35)],
++        [0x3d3025, mix(floor, wood, 0.3)], [0x2a3a2a, mix(floor, accent, 0.12)], [0x253025, mix(floor, black, 0.12)],
++        [0x444466, outline],
++        // room walls and rug
++        [0x6c5ce7, brass], [0xe17055, wall], [0x00b894, accent],
++        // wood ramp
++        [0x5a3e28, mix(wood, black, 0.3)], [0x6d4c2e, wood], [0x7d5c3e, mix(wood, white, 0.15)], [0x6a4e38, mix(wood, white, 0.1)],
++        [0x8b4513, mix(wood, black, 0.15)], [0xa0522d, wood], [0x3e2723, mix(wood, black, 0.5)],
++        // metal, screens, paper
++        [0x4a4a6a, mix(metal, black, 0.35)], [0x5a5a7a, mix(metal, black, 0.2)], [0x636e72, mix(metal, black, 0.2)],
++        [0xb2bec3, mix(metal, white, 0.2)], [0x2d3436, screen], [0x74b9ff, accent], [0xdfe6e9, paper],
++        [0xffeaa7, paper], [0xfdcb6e, brass],
++        // small accents: identity colours
++        [0x0984e3, tok('agent-analyst', '#6FA8F0')], [0xd63031, tok('agent-alpha', '#E8735C')],
++        [0x27ae60, mix(tok('agent-explorer', '#9BC25A'), black, 0.25)], [0x2ecc71, tok('agent-explorer', '#9BC25A')],
++    ]);
++}
++
++/** Routes a Graphics object's colours through the design palette. Unknown colours pass through unchanged. */
++function themed(g: Phaser.GameObjects.Graphics): Phaser.GameObjects.Graphics {
++    const pal = designPalette();
++    const fill = g.fillStyle.bind(g);
++    const line = g.lineStyle.bind(g);
++    g.fillStyle = (color: number, alpha?: number) => fill(pal.get(color) ?? color, alpha);
++    g.lineStyle = (width: number, color: number, alpha?: number) => line(width, pal.get(color) ?? color, alpha);
++    return g;
++}
++
++// 7x7 state glyphs from the design system (StatusBadge), drawn as pixels above an agent's head.
++const GLYPHS: Record<string, { d: string; color: string }> = {
++    working: { d: 'M0 0h1v1h-1zM2 0h3v1h-3zM6 0h1v1h-1zM1 1h5v1h-5zM0 2h3v1h-3zM4 2h3v1h-3zM0 3h2v1h-2zM5 3h2v1h-2zM0 4h3v1h-3zM4 4h3v1h-3zM1 5h5v1h-5zM0 6h1v1h-1zM2 6h3v1h-3zM6 6h1v1h-1z', color: '--state-working' },
++    planning: { d: 'M3 0h1v1h-1zM2 1h1v1h-1zM4 1h1v1h-1zM1 2h1v1h-1zM5 2h1v1h-1zM0 3h1v1h-1zM3 3h1v1h-1zM6 3h1v1h-1zM1 4h1v1h-1zM5 4h1v1h-1zM2 5h1v1h-1zM4 5h1v1h-1zM3 6h1v1h-1z', color: '--state-planning' },
++    idle: { d: 'M0 0h5v1h-5zM4 1h1v1h-1zM3 2h1v1h-1zM2 3h1v1h-1zM1 4h1v1h-1zM0 5h5v1h-5z', color: '--state-idle' },
++};
++const ACTION_GLYPH: Record<string, string> = { work: 'working', use_tool: 'working', think: 'planning', talk: 'planning', idle: 'idle' };
++
++function drawGlyph(g: Phaser.GameObjects.Graphics, name: string) {
++    const glyph = GLYPHS[name];
++    g.clear();
++    if (!glyph) return;
++    g.fillStyle(toNum(cssVar('--outline', '#120C08')), 1);
++    g.fillRect(-1, -1, 9, 9);
++    g.fillStyle(toNum(cssVar(glyph.color, '#B7ADA0')), 1);
++    for (const [, x, y, w, h] of glyph.d.matchAll(/M(\d+) (\d+)h(\d+)v(\d+)/g)) g.fillRect(Number(x), Number(y), Number(w), Number(h));
++}
++
+ let activeRoom: Colyseus.Room<OfficeState> | undefined;
+ 
+ export function getColyseusRoom() {
+@@ -63,7 +139,7 @@ export class OfficeScene extends Phaser.Scene {
+     create() {
+         try {
+             console.log("Phaser create() started");
+-            this.statusText = this.add.text(10, 10, 'Colyseus Sync: Connecting...', { color: '#ffffaa', fontSize: '14px' });
++            this.statusText = this.add.text(10, 10, 'Room: connecting...', { color: cssVar('--text-secondary', '#D2C4AE'), fontSize: '13px', fontFamily: UI_FONT });
+             this.statusText.setScrollFactor(0);
+             this.statusText.setDepth(100);
+ 
+@@ -88,7 +164,7 @@ export class OfficeScene extends Phaser.Scene {
+             console.log("Animations created: ", hasAnims);
+ 
+             const gridSize = this.gridSize;
+-            const g = this.add.graphics();
++            const g = themed(this.add.graphics());
+ 
+             // ═══════════════════════════════════════════
+             //  FLOORING
+@@ -144,9 +220,9 @@ export class OfficeScene extends Phaser.Scene {
+             g.fillRect(350, 410, 4, 40);
+ 
+             // Room labels
+-            this.add.text(132, 46, '🏢 Meeting Room', { fontSize: '10px', color: '#b8a9d4' }).setOrigin(0.5);
+-            this.add.text(380, 46, '💡 Collab Area', { fontSize: '10px', color: '#e8a87c' }).setOrigin(0.5);
+-            this.add.text(438, 364, '☕ Coffee & Pantry', { fontSize: '10px', color: '#7fcdaa' }).setOrigin(0.5);
++            this.add.text(132, 46, 'Meeting room', { fontSize: '10px', color: cssVar('--text-primary', '#F6ECDD'), fontFamily: DISPLAY_FONT, backgroundColor: cssVar('--panel-bg', '#251C16'), padding: { x: 3, y: 1 } }).setOrigin(0.5);
++            this.add.text(380, 46, 'Collab area', { fontSize: '10px', color: cssVar('--text-primary', '#F6ECDD'), fontFamily: DISPLAY_FONT, backgroundColor: cssVar('--panel-bg', '#251C16'), padding: { x: 3, y: 1 } }).setOrigin(0.5);
++            this.add.text(438, 364, 'Coffee & pantry', { fontSize: '10px', color: cssVar('--text-primary', '#F6ECDD'), fontFamily: DISPLAY_FONT, backgroundColor: cssVar('--panel-bg', '#251C16'), padding: { x: 3, y: 1 } }).setOrigin(0.5);
+ 
+             // ═══════════════════════════════════════════
+             //  MEETING ROOM FURNITURE
+@@ -276,12 +352,12 @@ export class OfficeScene extends Phaser.Scene {
+                 g.fillCircle(x + 22, y + 38, 6);
+ 
+                 // Label
+-                this.add.text(x + 28, y - 6, label, { fontSize: '8px', color: '#a0a0c0' }).setOrigin(0.5);
++                this.add.text(x + 28, y - 6, label, { fontSize: '8px', color: cssVar('--text-muted', '#B3A48D'), fontFamily: UI_FONT }).setOrigin(0.5);
+             };
+ 
+-            drawWorkstation(64, 240, '💻 Alice\'s Desk', true);
+-            drawWorkstation(64, 320, '💻 Bob\'s Desk', true);
+-            drawWorkstation(64, 400, '💻 Vacant', false);
++            drawWorkstation(64, 240, 'Desk 1', true);
++            drawWorkstation(64, 320, 'Desk 2', true);
++            drawWorkstation(64, 400, 'Desk 3', false);
+ 
+             // ═══════════════════════════════════════════
+             //  COFFEE & PANTRY AREA
+@@ -336,7 +412,6 @@ export class OfficeScene extends Phaser.Scene {
+             g.fillRect(468, 404, 16, 16);
+             g.fillStyle(0x74b9ff, 0.4);
+             g.fillRect(470, 382, 8, 16); // water level
+-            this.add.text(476, 424, '💧', { fontSize: '8px' }).setOrigin(0.5);
+ 
+             // ═══════════════════════════════════════════
+             //  DECORATIONS
+@@ -392,7 +467,6 @@ export class OfficeScene extends Phaser.Scene {
+             g.fillRect(542, 142, 26, 10);
+             g.fillStyle(0x2d3436, 1);
+             g.fillRect(545, 155, 6, 2); // paper slot
+-            this.add.text(555, 164, '🖨️', { fontSize: '8px' }).setOrigin(0.5);
+ 
+             // Welcome mat / rug at center
+             g.fillStyle(0x6c5ce7, 0.15);
+@@ -411,7 +485,7 @@ export class OfficeScene extends Phaser.Scene {
+             }
+             g.strokePath();
+ 
+-            this.cameras.main.setBackgroundColor('#16213e');
++            this.cameras.main.setBackgroundColor(getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1A1410');
+             this.cameras.main.setZoom(2);
+             this.cameras.main.centerOn(gridSize / 2, gridSize / 2);
+             this.cameras.main.setBounds(0, 0, gridSize, gridSize);
+@@ -505,19 +579,19 @@ export class OfficeScene extends Phaser.Scene {
+         try {
+             console.log("Connecting to Colyseus...");
+             const wsEndpoint = resolveWsEndpoint();
+-            this.statusText.setText(`Colyseus Sync: Connecting to ${wsEndpoint}...`).setColor('#ffffaa');
++            this.statusText.setText(`Room: connecting to ${wsEndpoint}...`).setColor(cssVar('--text-secondary', '#D2C4AE'));
+             const client = new Colyseus.Client(wsEndpoint);
+             this.room = await client.joinOrCreate('office');
+ 
+             console.log("Room joined successfully!", this.room.sessionId);
+-            this.statusText.setText('Colyseus Sync: Connected (Waiting for state...)').setColor('#aaffaa');
++            this.statusText.setText('Room: connected, waiting for state').setColor(cssVar('--text-secondary', '#D2C4AE'));
+ 
+             // Wait for the first actual state payload from the server before reading
+             this.room.onStateChange.once((state: any) => {
+                 activeRoom = this.room as Colyseus.Room<OfficeState>;
+                 console.log("First state payload arrived!", state.toJSON());
+                 console.log("Agents map size:", state.agents?.size);
+-                this.statusText.setText('Colyseus Sync: Active!').setColor('#00ff00');
++                this.statusText.setText('Room: live').setColor(cssVar('--live', '#5BC0EB'));
+ 
+                 // Bind chat bus
+                 this.room!.onMessage('chat', (message: any) => {
+@@ -547,40 +621,39 @@ export class OfficeScene extends Phaser.Scene {
  
                      let sprite;
                      let charKey = 'char_0';
@@ -431,3 +1701,119 @@ index b2688da..c19166a 100644
  
                      if (this.textures.exists(charKey)) {
                          sprite = this.add.sprite(0, -8, charKey, 0);
+                     } else {
+-                        sprite = this.add.rectangle(0, -8, 16, 32, 0x3a86ff);
++                        sprite = this.add.rectangle(0, -8, 16, 32, tok('accent-primary', '#4DBFB2'));
+                     }
+ 
+                     // Thought bubble (word-wrapped)
+                     const thoughtBubble = this.add.text(0, -36, '', {
+                         fontSize: '9px',
+-                        color: '#e0e0e0',
+-                        backgroundColor: '#1a1a3eee',
++                        fontFamily: UI_FONT,
++                        color: cssVar('--text-primary', '#F6ECDD'),
++                        backgroundColor: cssVar('--panel-bg', '#251C16'),
+                         padding: { x: 5, y: 4 },
+                         align: 'center',
+                         wordWrap: { width: 130, useAdvancedWrap: true }
+                     }).setOrigin(0.5, 1);
+                     thoughtBubble.setVisible(false);
+ 
+-                    // Emote bubble (emoji above head)
+-                    const emoteBubble = this.add.text(8, -24, '', {
+-                        fontSize: '12px'
+-                    }).setOrigin(0.5);
++                    // State marker above the head: a design-system pixel glyph, never an emoji
++                    const emoteBubble = this.add.graphics({ x: 5, y: -30 });
+                     emoteBubble.setVisible(false);
+ 
+                     // Name label
+                     const label = this.add.text(0, 16, agent.name, {
+-                        fontSize: '10px', color: '#ffffff',
+-                        backgroundColor: '#00000088', padding: { x: 2, y: 1 }
++                        fontSize: '10px', fontFamily: DISPLAY_FONT, color: cssVar('--text-primary', '#F6ECDD'),
++                        backgroundColor: cssVar('--panel-bg', '#251C16'), padding: { x: 3, y: 1 }
+                     }).setOrigin(0.5, 0);
+ 
+                     // Focus highlight ring (hidden by default)
+                     const focusRing = this.add.graphics();
+-                    focusRing.lineStyle(1, 0x6c5ce7, 0.8);
++                    focusRing.lineStyle(1, tok('selected', '#FFF1C9'), 1);
+                     focusRing.strokeCircle(0, 0, 14);
+                     focusRing.setVisible(false);
+ 
+@@ -636,13 +709,9 @@ export class OfficeScene extends Phaser.Scene {
+                         }
+ 
+                         // --- EMOTE BUBBLES based on action ---
+-                        const emoteMap: Record<string, string> = {
+-                            'work': '💻', 'talk': '💬', 'idle': '😌',
+-                            'use_tool': '🔧', 'move': '🚶', 'think': '💡'
+-                        };
+-                        const emote = emoteMap[agent.action] || '';
++                        const emote = ACTION_GLYPH[agent.action] || '';
+                         if (emote && agent.action !== lastAction) {
+-                            emoteBubble.setText(emote);
++                            drawGlyph(emoteBubble, emote);
+                             emoteBubble.setVisible(true);
+                             // Auto-hide after 3s
+                             this.time.delayedCall(3000, () => emoteBubble.setVisible(false));
+@@ -696,7 +765,7 @@ export class OfficeScene extends Phaser.Scene {
+         } catch (e) {
+             console.error(e);
+             const wsEndpoint = resolveWsEndpoint();
+-            this.statusText.setText(`Colyseus Sync: Failed (${wsEndpoint})`).setColor('#ffaaaa');
++            this.statusText.setText(`Room: offline (${wsEndpoint})`).setColor(cssVar('--failed', '#F2707F'));
+         }
+     }
+ 
+@@ -755,7 +824,7 @@ export class OfficeScene extends Phaser.Scene {
+             const x = Math.round(item.x) * 16;
+             const y = Math.round(item.y) * 16;
+             const group = this.add.container(x, y);
+-            const g = this.add.graphics();
++            const g = themed(this.add.graphics());
+             switch (item.type) {
+                 case 'plant':
+                     g.fillStyle(0x8b4513, 1);
+@@ -808,7 +877,7 @@ export class OfficeScene extends Phaser.Scene {
+             }
+             group.add(g);
+             if (item.label) {
+-                const label = this.add.text(0, 10, item.label.slice(0, 8), { fontSize: '8px', color: '#dfe6f3' }).setOrigin(0.5, 0);
++                const label = this.add.text(0, 10, item.label.slice(0, 8), { fontSize: '8px', color: cssVar('--text-secondary', '#D2C4AE'), fontFamily: UI_FONT }).setOrigin(0.5, 0);
+                 group.add(label);
+             }
+             group.setSize(22, 22);
+diff --git a/packages/ui/src/main.tsx b/packages/ui/src/main.tsx
+index 32a7e77..308c3ae 100644
+--- a/packages/ui/src/main.tsx
++++ b/packages/ui/src/main.tsx
+@@ -3,6 +3,15 @@ import ReactDOM from 'react-dom/client';
+ import { App } from './App';
+ import { setupPhaser } from './game/Game';
+ 
++// Agent Office theme: chosen in the brand card, kept per browser. The map reads its colours at start.
++const THEME_KEY = 'agent-office:theme';
++try {
++    const saved = window.localStorage.getItem(THEME_KEY);
++    if (saved) document.documentElement.dataset.theme = saved;
++} catch {
++    // Storage blocked: keep the default theme.
++}
++
+ // Start React UI overlay
+ const rootElement = document.getElementById('ui-root');
+ if (rootElement) {
+@@ -10,5 +19,8 @@ if (rootElement) {
+     root.render(<App />);
+ }
+ 
+-// Start Phaser Game Engine
+-setupPhaser('phaser-container');
++// Start Phaser once the pixel display font is ready (or after a short wait), so map labels use it.
++const fontReady = document.fonts?.load('16px "Pixelify Sans"') ?? Promise.resolve();
++Promise.race([fontReady, new Promise((resolve) => setTimeout(resolve, 1500))])
++    .catch(() => undefined)
++    .then(() => setupPhaser('phaser-container'));
