@@ -1,7 +1,7 @@
 import { createSanitizer, InMemoryStore } from "@hugents/core";
-import { InMemoryDraftRepository, ROOM_CODE_RULE, type GeneratorManifest } from "../src/index.js";
+import { createManifest, InMemoryDraftRepository, ROOM_CODE_RULE } from "../src/index.js";
 
-export const manifest: GeneratorManifest = {
+export const manifest = createManifest({
   projectId: "example-project",
   allowedTargetUrlPattern: "^https://qa-[a-z0-9-]+\\.example\\.test$",
   blockedTargets: ["prod", "www."],
@@ -12,7 +12,7 @@ export const manifest: GeneratorManifest = {
     { id: "screen-hidden", hidden: true },
   ],
   forbiddenActions: ["delete account", "purchase", "sign out"],
-};
+});
 
 export const NOW = "2026-10-07T10:00:00Z";
 export const sanitizer = createSanitizer([ROOM_CODE_RULE]);

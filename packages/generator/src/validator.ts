@@ -1,6 +1,6 @@
 import ts from "typescript";
 import { DEFAULT_RULES } from "@hugents/core";
-import type { ReasonCode, ValidationIssue, ValidatorResult } from "./contracts.js";
+import type { AllowedElement, ReasonCode, ValidationIssue, ValidatorResult } from "./contracts.js";
 import type { GeneratorManifest } from "./manifest.js";
 
 /** The only module a generated spec may import from. It exports `test` (the seed fixture) and `expect`. */
@@ -66,11 +66,29 @@ function unwrap(node: ts.Expression): ts.Expression {
   return n;
 }
 
+export interface ValidateOptions {
+  /**
+   * First-layer allowlist. When present, every action (click, fill, press, ...) must target a
+   * `getByRole(role, { name })` locator whose literal role and name appear in this list. When absent, only the
+   * `forbiddenActions` denylist applies.
+   */
+  allowedElements?: readonly AllowedElement[];
+}
+
 /**
- * Pure, static validation of an untrusted generated spec. Parses with the TypeScript parser and walks the AST;
+ * Pure, static validation of an untrusted generated spec.
+ *
+ * `manifest.forbiddenActions` is a text-based denylist and a best-effort second layer: it looks for the phrases in
+ * the literal text of the locators an action targets. It does not catch positional locators (`.nth(2)`), partial
+ * regexes, or icon-only names. `options.allowedElements` is the stricter first layer.
+ * Parses with the TypeScript parser and walks the AST;
  * it never executes or imports the spec. Issues carry a reason code and a line number, never source text.
  */
-export function validateSpec(spec: string, manifest: Pick<GeneratorManifest, "forbiddenActions">): ValidatorResult {
+export function validateSpec(
+  spec: string,
+  manifest: Pick<GeneratorManifest, "forbiddenActions">,
+  options: ValidateOptions = {},
+): ValidatorResult {
   const issues: ValidationIssue[] = [];
   const seen = new Set<string>();
   const fail = (code: ReasonCode, line?: number) => {
@@ -114,8 +132,10 @@ export function validateSpec(spec: string, manifest: Pick<GeneratorManifest, "fo
   collect(sf);
 
   /** Walks a receiver chain down to its root and gathers the literal text of every getBy* argument on the way. */
-  const chainTexts = (start: ts.Expression, line: number): string[] => {
+  type Target = { method: string; role?: string; name?: string };
+  const chainTexts = (start: ts.Expression, line: number): { texts: string[]; targets: Target[] } => {
     const texts: string[] = [];
+    const targets: Target[] = [];
     const visited = new Set<string>();
     let n: ts.Expression = unwrap(start);
     for (let guard = 0; guard < 64; guard++) {
@@ -124,6 +144,17 @@ export function validateSpec(spec: string, manifest: Pick<GeneratorManifest, "fo
         const callee = unwrap(n.expression);
         if (ts.isPropertyAccessExpression(callee)) {
           if (LOCATOR_METHODS.has(callee.name.text)) {
+            const [first, second] = n.arguments;
+            const nameProp =
+              second && ts.isObjectLiteralExpression(second)
+                ? second.properties.find((p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === "name")
+                : undefined;
+            const nameNode = nameProp?.initializer;
+            targets.push({
+              method: callee.name.text,
+              role: first && ts.isStringLiteralLike(first) ? first.text : undefined,
+              name: nameNode && ts.isStringLiteralLike(nameNode) ? nameNode.text : undefined,
+            });
             for (const a of n.arguments) {
               if (ts.isObjectLiteralExpression(a)) {
                 for (const p of a.properties) if (ts.isPropertyAssignment(p)) texts.push(literalOf(p.initializer)?.text ?? "");
@@ -136,14 +167,14 @@ export function validateSpec(spec: string, manifest: Pick<GeneratorManifest, "fo
           continue;
         }
         fail("locator-not-allowed", line);
-        return texts;
+        return { texts, targets };
       }
       if (ts.isPropertyAccessExpression(n)) {
         n = n.expression;
         continue;
       }
       if (ts.isIdentifier(n)) {
-        if (n.text === "page") return texts;
+        if (n.text === "page") return { texts, targets };
         const init = consts.get(n.text);
         if (init && !visited.has(n.text)) {
           visited.add(n.text);
@@ -152,10 +183,10 @@ export function validateSpec(spec: string, manifest: Pick<GeneratorManifest, "fo
         }
       }
       fail("locator-not-allowed", line);
-      return texts;
+      return { texts, targets };
     }
     fail("locator-not-allowed", line);
-    return texts;
+    return { texts, targets };
   };
 
   const visit = (node: ts.Node): void => {
@@ -233,10 +264,19 @@ export function validateSpec(spec: string, manifest: Pick<GeneratorManifest, "fo
         }
 
         if (ACTION_METHODS.has(name)) {
-          const haystack = [...chainTexts(callee.expression, line), ...node.arguments.map((a) => literalOf(a)?.text ?? "")]
-            .join(" ")
-            .toLowerCase();
+          const { texts, targets } = chainTexts(callee.expression, line);
+          const haystack = [...texts, ...node.arguments.map((a) => literalOf(a)?.text ?? "")].join(" ").toLowerCase();
           if (forbidden.some((f) => haystack.includes(f))) fail("forbidden-action", line);
+          if (options.allowedElements) {
+            // The outermost locator in the chain is the element the action lands on.
+            const target = targets[0];
+            const listed =
+              target?.method === "getByRole" &&
+              target.role !== undefined &&
+              target.name !== undefined &&
+              options.allowedElements.some((e) => e.role === target.role && e.name === target.name);
+            if (!listed) fail("element-not-allowed", line);
+          }
         }
       } else if (ts.isIdentifier(callee)) {
         if (callee.text === "test") {

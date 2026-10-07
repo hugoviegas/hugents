@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { approveDraft } from "../src/admin.js";
 import {
-  approveDraft, createRequest, DeterministicProvider, enqueueApprovedDraft, generateDraft, ProviderFailure, runDraftTask,
+  createRequest, DeterministicProvider, enqueueApprovedDraft, generateDraft, ProviderFailure, runDraftTask,
   type ExplorationObservation, type TestGenerationProvider,
 } from "../src/index.js";
 import { GOOD_SPEC, makeDeps, manifest, NOW, sanitizer } from "./fixtures.js";
@@ -128,7 +129,7 @@ describe("full flow with a mocked run", () => {
     expect(done?.status).toBe("passed");
     expect((await d.store.getTask(task.id))?.status).toBe("completed");
     expect((await d.drafts.get(draft.id))?.status).toBe("passed");
-    expect(await stages(d, `run-${draft.id}`)).toEqual(["working/queued", "working/play", "completed/teardown"]);
+    expect(await stages(d, `run-${draft.id}`)).toEqual(["waiting/queued", "working/play", "completed/teardown"]);
   });
 
   it("a failing run is recorded as failed", async () => {
@@ -161,5 +162,26 @@ describe("full flow with a mocked run", () => {
     expect(executor).not.toHaveBeenCalled();
     expect((await d.store.getTask(task.id))?.status).toBe("blocked");
     expect((await d.store.listEvents(`run-${approved.id}`)).at(-1)?.status).toBe("failed");
+  });
+});
+
+describe("restrictToObservedElements", () => {
+  it("rejects a generated action on an element that was not observed, and keeps the list on the draft", async () => {
+    const d = { ...makeDeps(), restrictToObservedElements: true };
+    const provider: TestGenerationProvider = { name: "x", plan: async () => "# p", generateSpec: async () => GOOD_SPEC.replace("Save", "Trash") };
+    const draft = await generateDraft({ ...d, provider }, request(), observation());
+    expect(draft.reasons).toContain("element-not-allowed");
+    expect(draft.allowedElements).toEqual([{ role: "button", name: "Save" }, { role: "heading", name: "Settings" }]);
+    const ok = await generateDraft({ ...makeDeps(), restrictToObservedElements: true, provider: { name: "y", plan: async () => "# p", generateSpec: async () => GOOD_SPEC } }, request(), observation());
+    expect(ok.status).toBe("draft");
+  });
+});
+
+describe("room-code rule", () => {
+  it("shows which ordinary labels it alters (documented over-redaction)", () => {
+    const altered = ["Room settings", "Room list", "Join room later", "Sala nova", "Código ABC123"];
+    const untouched = ["Create room", "Join room now", "Sala de jogo", "Rooms", "Settings", "Save"];
+    for (const l of altered) expect(sanitizer.sanitizeText(l), l).toContain("[room-code]");
+    for (const l of untouched) expect(sanitizer.sanitizeText(l), l).toBe(l);
   });
 });

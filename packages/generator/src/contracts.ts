@@ -3,6 +3,7 @@ import type { Sanitizer } from "@hugents/core";
 /** Fixed vocabulary. A rejection never carries free text, code or model output. */
 export const REASON_CODES = [
   "forbidden-action",
+  "element-not-allowed",
   "disallowed-import",
   "hardcoded-url",
   "locator-not-allowed",
@@ -31,6 +32,11 @@ export type DraftStatus = (typeof DRAFT_STATUSES)[number];
 
 export const MAX_GOAL_LENGTH = 200;
 const OPAQUE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+export interface AllowedElement {
+  role: string;
+  name: string;
+}
 
 export interface TestRequest {
   id: string;
@@ -76,6 +82,8 @@ export interface TestDraft {
   approval?: ApprovalRecord;
   /** SHA-256 (hex) of `spec`. */
   contentHash: string;
+  /** Role and name pairs actions were restricted to at generation time. Kept so every revalidation applies the same list. */
+  allowedElements?: AllowedElement[];
   /** Why the draft was rejected, when it was. */
   reasons: ReasonCode[];
 }

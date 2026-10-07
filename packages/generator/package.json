@@ -18,5 +18,15 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "vitest": "^2.1.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./admin": {
+      "types": "./dist/admin.d.ts",
+      "default": "./dist/admin.js"
+    }
   }
 }

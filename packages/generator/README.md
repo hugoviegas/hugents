@@ -6,7 +6,7 @@ Turns a problem reported by one agent into a reviewable Playwright test draft. N
 - `src/validator.ts`: pure static validator for generated specs (AST based, never executes the spec).
 - `src/seed.ts`: the shared seed fixture contract (allowlist check, then login, then a ready page).
 - `src/pipeline.ts`: exploration input, provider interface, deterministic provider, draft generation.
-- `src/approval.ts`: admin-only approval, edit resets approval, content hash binding.
+- `src/approval.ts` and `src/admin.ts`: approval, edit resets approval, content hash binding. Approval is exported from `@hugents/generator/admin` only.
 - `src/queue.ts`: approved draft to a `run-generated-test` task and its handler.
 - `src/events.ts`: stage events on the core event contract.
 

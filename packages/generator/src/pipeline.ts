@@ -108,6 +108,8 @@ export interface PipelineDeps {
   manifest: GeneratorManifest;
   /** Omit to use the deterministic skeleton. A configured provider that fails produces a rejected draft. */
   provider?: TestGenerationProvider;
+  /** Restrict actions to the elements seen in the sanitized exploration input (validator first layer). */
+  restrictToObservedElements?: boolean;
   now: () => string;
 }
 
@@ -140,8 +142,10 @@ export async function generateDraft(
   const ids = { taskId: `gen-${request.id}` };
   const id = `draft-${request.id}`;
 
+  let allowedElements: TestDraft["allowedElements"];
   const finish = async (spec: string, plan: string, reasons: ReasonCode[], validation: TestDraft["validation"], status: TestDraft["status"]) => {
     const draft: TestDraft = { id, requestId: request.id, plan, spec, validation, status, contentHash: hashSpec(spec), reasons };
+    if (allowedElements) draft.allowedElements = allowedElements;
     await drafts.save(draft);
     return draft;
   };
@@ -149,6 +153,7 @@ export async function generateDraft(
   await emitter.emit("requested", ids);
 
   const input = buildExplorationInput(observation, request, manifest, sanitizer);
+  if (input && deps.restrictToObservedElements) allowedElements = input.elements.map((e) => ({ ...e }));
   if (!input) {
     const hidden = manifest.screens.some((s) => s.id === request.screenId && s.hidden);
     const code: ReasonCode = hidden ? "screen-hidden" : "screen-unknown";
@@ -172,7 +177,7 @@ export async function generateDraft(
   }
 
   await emitter.emit("validating", ids);
-  const validation = validateSpec(spec, manifest);
+  const validation = validateSpec(spec, manifest, { allowedElements });
   const safePlan = sanitizePlan(plan, sanitizer);
   if (!validation.ok) {
     await emitter.emit("rejected", ids);

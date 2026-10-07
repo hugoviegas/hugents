@@ -2,7 +2,7 @@ export * from "./contracts.js";
 export * from "./manifest.js";
 export * from "./validator.js";
 export * from "./seed.js";
-export * from "./approval.js";
+export { assertRunnable, hashSpec, ApprovalError } from "./approval.js";
 export * from "./events.js";
 export * from "./pipeline.js";
 export * from "./queue.js";

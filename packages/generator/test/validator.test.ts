@@ -71,3 +71,42 @@ describe("validateSpec", () => {
     expect(JSON.stringify(result)).not.toContain("secret");
   });
 });
+
+describe("forbiddenActions is a best-effort denylist", () => {
+  // These pass the denylist on purpose: they show what a text match cannot see.
+  it.each([
+    ["a positional locator", `await page.getByRole("button").nth(3).click();`],
+    ["a regex that only partly matches the phrase", `await page.getByRole("button", { name: /^del/i }).click();`],
+    ["an icon-only name", `await page.getByRole("button", { name: "Trash" }).click();`],
+  ])("does NOT catch %s", (_n, body) => {
+    expect(validateSpec(wrap(body), manifest).ok).toBe(true);
+  });
+
+  const allowedElements = [{ role: "button", name: "Save" }];
+  const withList = (body: string) => validateSpec(wrap(body), manifest, { allowedElements });
+
+  it.each([
+    ["a positional locator", `await page.getByRole("button").nth(3).click();`],
+    ["a regex name", `await page.getByRole("button", { name: /^Sav/ }).click();`],
+    ["an icon-only name", `await page.getByRole("button", { name: "Trash" }).click();`],
+    ["a getByText target", `await page.getByText("Save").click();`],
+    ["a right name with the wrong role", `await page.getByRole("link", { name: "Save" }).click();`],
+  ])("the allowlist catches %s", (_n, body) => {
+    expect(withList(body).issues.map((i) => i.code)).toContain("element-not-allowed");
+  });
+
+  it("the allowlist accepts a listed element, also through a variable and a chain", () => {
+    expect(withList(`await page.getByRole("button", { name: "Save" }).click();`).ok).toBe(true);
+    expect(withList(`const b = page.getByRole("button", { name: "Save" });\nawait b.click();`).ok).toBe(true);
+    expect(withList(`await page.getByRole("button", { name: "Save" }).first().click();`).ok).toBe(true);
+  });
+
+  it("the allowlist does not restrict assertions", () => {
+    expect(withList(`await expect(page.getByText("Anything")).toBeVisible();`).ok).toBe(true);
+  });
+
+  it("without a list, behavior is unchanged", () => {
+    expect(validateSpec(GOOD_SPEC, manifest).ok).toBe(true);
+    expect(validateSpec(GOOD_SPEC, manifest, {}).ok).toBe(true);
+  });
+});

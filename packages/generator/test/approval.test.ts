@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApprovalError, approveDraft, assertRunnable, editDraft, hashSpec, validateSpec, type TestDraft } from "../src/index.js";
+import { approveDraft, editDraft } from "../src/admin.js";
+import { ApprovalError, assertRunnable, hashSpec, validateSpec, type TestDraft } from "../src/index.js";
 import { GOOD_SPEC, manifest, NOW } from "./fixtures.js";
 
 const draft = (): TestDraft => ({
@@ -45,5 +46,14 @@ describe("approval gate", () => {
 
   it("a rejected draft cannot be approved", () => {
     expect(() => approveDraft({ ...draft(), status: "rejected" }, admin, manifest, NOW)).toThrow(/not-approvable/);
+  });
+});
+
+describe("allowed elements stay bound to the draft", () => {
+  it("editing keeps applying the list", () => {
+    const d = { ...draft(), allowedElements: [{ role: "button", name: "Save" }] };
+    const edited = editDraft(d, { spec: GOOD_SPEC.replace("Save", "Other") }, manifest);
+    expect(edited.status).toBe("rejected");
+    expect(edited.reasons).toContain("element-not-allowed");
   });
 });

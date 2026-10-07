@@ -22,7 +22,7 @@ const STAGE_EVENT: Record<Stage, { agent: AgentId | "system"; status: Status; ph
   validating: { agent: "explorer", status: "reviewing", phase: "analyze" },
   rejected: { agent: "explorer", status: "blocked", phase: "analyze" },
   "awaiting-approval": { agent: "system", status: "waiting", phase: "report" },
-  approved: { agent: "system", status: "working", phase: "queued" },
+  approved: { agent: "system", status: "waiting", phase: "queued" },
   running: { agent: "player-alpha", status: "working", phase: "play" },
   completed: { agent: "player-alpha", status: "completed", phase: "teardown" },
   failed: { agent: "system", status: "failed", phase: "teardown" },
