@@ -19,7 +19,8 @@ describe("Agent Office theme", () => {
   });
 
   it("keeps the AgentOffice copy in office/theme in sync with the tokens", async () => {
-    const committed = await readFile(path.join(process.cwd(), "office", "theme", "agent-office.css"), "utf8");
+    // A Windows checkout with core.autocrlf may turn LF into CRLF; line endings are not drift.
+    const committed = (await readFile(path.join(process.cwd(), "office", "theme", "agent-office.css"), "utf8")).replace(/\r\n/g, "\n");
     expect(committed, "run npm run office:theme").toBe(officeThemeCss());
   });
 });
