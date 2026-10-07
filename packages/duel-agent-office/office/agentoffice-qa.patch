@@ -1,0 +1,433 @@
+diff --git a/packages/server/src/index.ts b/packages/server/src/index.ts
+index e155242..2d53fe3 100644
+--- a/packages/server/src/index.ts
++++ b/packages/server/src/index.ts
+@@ -13,6 +13,10 @@ app.get('/api/offices', (req, res) => {
+ });
+ 
+ app.post('/api/vote-chaos', (req, res) => {
++    if (process.env.OFFICE_READONLY === 'true') {
++        res.status(403).json({ ok: false, error: 'Read-only office.' });
++        return;
++    }
+     const room = OfficeRoom.getActiveRoom();
+     if (!room) {
+         res.status(503).json({ ok: false, error: 'No active office room.' });
+diff --git a/packages/server/src/memory/MemoryStore.ts b/packages/server/src/memory/MemoryStore.ts
+index 6799ffa..3612dd8 100644
+--- a/packages/server/src/memory/MemoryStore.ts
++++ b/packages/server/src/memory/MemoryStore.ts
+@@ -169,6 +169,14 @@ export class MemoryStore {
+         await this.db.run('UPDATE tasks SET assigned_to = ?, status = ? WHERE id = ?', [agentId, 'in_progress', taskId]);
+     }
+ 
++    async setTaskStatus(taskId: number, status: string): Promise<void> {
++        if (!this.db) return;
++        await this.db.run(
++            "UPDATE tasks SET status = ?, completed_at = CASE WHEN ? IN ('completed', 'blocked') THEN datetime('now') ELSE completed_at END WHERE id = ?",
++            [status, status, taskId]
++        );
++    }
++
+     async completeTask(taskId: number): Promise<void> {
+         if (!this.db) return;
+         await this.db.run("UPDATE tasks SET status = 'completed', completed_at = datetime('now') WHERE id = ?", [taskId]);
+diff --git a/packages/server/src/rooms/OfficeRoom.ts b/packages/server/src/rooms/OfficeRoom.ts
+index b01d46e..c881092 100644
+--- a/packages/server/src/rooms/OfficeRoom.ts
++++ b/packages/server/src/rooms/OfficeRoom.ts
+@@ -5,6 +5,25 @@ import { OllamaAdapter } from '@agent-office/adapters';
+ import { ToolExecutor } from '../tools/ToolExecutor';
+ import { MemoryStore } from '../memory/MemoryStore';
+ 
++// ─── QA office integration (Big Bang Duel, issue #98) ───
++// The four QA agents run their tasks through the local bridge in duel-agent-office (npm run office:bridge).
++const QA_AGENTS = [
++    { id: 'player-alpha', name: 'Alpha', role: 'QA Player', x: 10, y: 10 },
++    { id: 'explorer', name: 'Explorer', role: 'QA Explorer', x: 20, y: 15 },
++    { id: 'qa-analyst', name: 'Analyst', role: 'QA Analyst', x: 12, y: 20 },
++    { id: 'design-critic', name: 'Critic', role: 'Design Critic', x: 22, y: 22 },
++];
++const BRIDGE_URL = process.env.QA_BRIDGE_URL || 'http://127.0.0.1:3100';
++// OFFICE_READONLY=true: public/portfolio mode. Clients cannot assign tasks, chat, edit layouts or trigger events.
++const READONLY = process.env.OFFICE_READONLY === 'true';
++
++interface QaEvent {
++    status: 'idle' | 'working' | 'blocked' | 'completed';
++    activity: string;
++    tool?: string;
++    result?: { status: 'completed' | 'blocked'; summary: string; reportPath?: string; runId?: string; metrics: { reputation: number } };
++}
++
+ interface HighlightEvent {
+     type: string;
+     title: string;
+@@ -41,9 +60,15 @@ export class OfficeRoom extends Room<OfficeState> {
+     private relationships: Map<string, RelationshipEdge> = new Map();
+     private audienceVotes: Record<string, number> = {};
+     private currentLayout: any[] = [];
++    private qaQueue: Map<string, Array<{ taskId: number; title: string }>> = new Map();
++    private qaBusy: Set<string> = new Set();
+ 
+     // Furniture interaction points: named locations agents can walk to
+     private furnitureTargets: Record<string, { x: number; y: number; type: string }> = {
++        'player-alpha-desk': { x: 5, y: 18, type: 'desk' },
++        'explorer-desk': { x: 5, y: 23, type: 'desk' },
++        'qa-analyst-desk': { x: 15, y: 18, type: 'desk' },
++        'design-critic-desk': { x: 15, y: 23, type: 'desk' },
+         'alice-desk': { x: 5, y: 18, type: 'desk' },
+         'bob-desk': { x: 5, y: 23, type: 'desk' },
+         'meeting-table': { x: 10, y: 5, type: 'table' },
+@@ -124,8 +149,8 @@ export class OfficeRoom extends Room<OfficeState> {
+             this.thinkingLocks.set(id, false);
+         };
+ 
+-        await setupCoreAgent('alice', 'Alice', 'Engineer', 10, 10);
+-        await setupCoreAgent('bob', 'Bob', 'Product Manager', 20, 15);
++        void setupCoreAgent; // upstream demo agents (alice, bob) are replaced by the QA agents below
++        await this.setupQaAgents();
+         this.rebuildRelationshipGraph();
+         const savedLayout = await this.memoryStore.loadLayout('default');
+         this.currentLayout = Array.isArray(savedLayout) ? savedLayout : [];
+@@ -133,59 +158,45 @@ export class OfficeRoom extends Room<OfficeState> {
+         // ─── MESSAGE HANDLERS ───
+ 
+         this.onMessage('command', (client, message) => {
++            if (READONLY) return;
+             console.log(`Command from ${client.sessionId}:`, message);
+         });
+ 
+         this.onMessage('chat', (client, message) => {
++            if (READONLY) return;
+             console.log(`Chat from ${client.sessionId}: ${message.text}`);
+             this.broadcast('chat', { sender: 'User', text: message.text });
+         });
+ 
+         this.onMessage('start-scenario', (client, message) => {
++            if (READONLY) return;
+             const scenarioName = String(message?.scenario || 'Free Play');
+             this.currentScenario = scenarioName;
+             this.applyScenarioKickoff(scenarioName);
+         });
+ 
+         this.onMessage('trigger-chaos', (client, message) => {
++            if (READONLY) return;
+             const eventName = String(message?.event || 'minor_outage');
+             this.applyChaosEvent(eventName);
+         });
+ 
+-        // UI-driven task assignment
++        // UI-driven task assignment: the task is queued for the chosen QA agent, which claims it when idle.
+         this.onMessage('assign-task', (client, message) => {
+-            const { title, agentId } = message;
+-            console.log(`[TaskBoard] Assigning "${title}" to ${agentId || 'auto'}`);
+-
+-            // Pick agent: explicit or auto-assign to least busy
+-            const targetId = agentId || this.autoAssignAgent();
+-            const agent = this.coreAgents.get(targetId);
+-            const agentState = this.state.agents.get(targetId);
+-
+-            if (agent && agentState) {
+-                agent.currentTask = title;
+-                agentState.currentTask = title;
+-                agentState.action = 'work';
+-
+-                // Persist task
+-                this.memoryStore.createTask(title, targetId);
+-
+-                this.broadcast('chat', {
+-                    sender: 'System',
+-                    text: `📋 Task "${title}" assigned to ${agentState.name}`
+-                });
+-
+-                this.broadcast('task-update', {
+-                    agentId: targetId,
+-                    agentName: agentState.name,
+-                    task: title,
+-                    status: 'in_progress'
+-                });
++            if (READONLY) return;
++            const title = String(message?.title || '').trim().slice(0, 200);
++            const agentId = String(message?.agentId || '');
++            if (!title) return;
++            if (!QA_AGENTS.some((a) => a.id === agentId)) {
++                this.broadcast('chat', { sender: 'System', text: '⚠️ Pick one of the four QA agents for this task.' });
++                return;
+             }
++            void this.enqueueQaTask(title, agentId);
+         });
+ 
+         // Save office layout from editor
+         this.onMessage('save-layout', async (client, message) => {
++            if (READONLY) return;
+             const layoutName = message.name || 'default';
+             const layout = Array.isArray(message.layout) ? message.layout : [];
+             await this.memoryStore.saveLayout(layoutName, JSON.stringify(layout));
+@@ -510,7 +521,6 @@ export class OfficeRoom extends Room<OfficeState> {
+         state.momentum = this.clamp01(state.momentum + actionBoost + jitter);
+         state.riskLevel = this.clamp01(state.riskLevel + (action === 'use_tool' ? 0.02 : -0.004) + jitter);
+         state.mood = this.clamp01(state.mood + (action === 'talk' ? 0.02 : -0.002) + jitter);
+-        state.reputation = this.clamp01(state.reputation + (action === 'work' ? 0.015 : 0.001) + jitter / 2);
+     }
+ 
+     private applyScenarioKickoff(scenarioName: string) {
+@@ -741,7 +751,118 @@ export class OfficeRoom extends Room<OfficeState> {
+         };
+     }
+ 
+-    onJoin(client: Client, options: any) {
++    private async fetchQaMetrics(): Promise<Record<string, any>> {
++        try {
++            const res = await fetch(`${BRIDGE_URL}/metrics`);
++            return res.ok ? await res.json() : {};
++        } catch {
++            return {};
++        }
++    }
++
++    private async setupQaAgents() {
++        const metrics = await this.fetchQaMetrics();
++        for (const a of QA_AGENTS) {
++            this.state.createAgent(a.id, a.name);
++            const state = this.state.agents.get(a.id);
++            if (!state) continue;
++            state.x = a.x;
++            state.y = a.y;
++            state.reputation = metrics[a.id]?.reputation ?? 0.5;
++            this.qaQueue.set(a.id, []);
++        }
++    }
++
++    private async enqueueQaTask(title: string, agentId: string) {
++        const taskId = await this.memoryStore.createTask(title, agentId);
++        this.qaQueue.get(agentId)?.push({ taskId, title });
++        this.broadcast('task-update', { agentId, task: title, status: 'pending' });
++        void this.drainQa(agentId);
++    }
++
++    private async drainQa(agentId: string) {
++        if (this.qaBusy.has(agentId)) return;
++        const next = this.qaQueue.get(agentId)?.shift();
++        if (!next) return;
++        this.qaBusy.add(agentId);
++        try {
++            await this.runQaTask(agentId, next.taskId, next.title);
++        } finally {
++            this.qaBusy.delete(agentId);
++            void this.drainQa(agentId);
++        }
++    }
++
++    private applyQaEvent(agentId: string, event: QaEvent) {
++        const state = this.state.agents.get(agentId);
++        if (!state) return;
++        state.action = event.status === 'working' ? (event.tool ? 'use_tool' : 'work') : 'idle';
++        const mark = event.status === 'blocked' ? '⛔ ' : event.status === 'completed' ? '✅ ' : '';
++        state.thought = `${mark}${event.activity}`.slice(0, 120);
++        if (event.status === 'blocked' || event.status === 'completed') {
++            this.broadcast('chat', { sender: state.name, text: `${mark}${event.activity}` });
++            this.emitHighlight('task', `${state.name}: ${event.status}`, event.activity.slice(0, 120), agentId);
++        }
++    }
++
++    /** Streams the bridge's NDJSON event feed into agent state, the task board and persistent memory. */
++    private async runQaTask(agentId: string, taskId: number, title: string) {
++        const state = this.state.agents.get(agentId);
++        if (!state) return;
++        state.currentTask = title;
++        await this.memoryStore.setTaskStatus(taskId, 'in_progress');
++        this.broadcast('task-update', { agentId, task: title, status: 'in_progress' });
++
++        const memories = (await this.memoryStore.loadMemories(agentId, 5)).map((m) => m.content);
++        let result: QaEvent['result'];
++        try {
++            const res = await fetch(`${BRIDGE_URL}/tasks`, {
++                method: 'POST',
++                headers: { 'Content-Type': 'application/json' },
++                body: JSON.stringify({ taskId: String(taskId), agentId, title, memories }),
++            });
++            if (!res.ok || !res.body) throw new Error(`bridge answered ${res.status}`);
++            const reader = res.body.getReader();
++            const decoder = new TextDecoder();
++            let buffer = '';
++            for (;;) {
++                const { done, value } = await reader.read();
++                if (done) break;
++                buffer += decoder.decode(value, { stream: true });
++                let newline: number;
++                while ((newline = buffer.indexOf('\n')) >= 0) {
++                    const line = buffer.slice(0, newline).trim();
++                    buffer = buffer.slice(newline + 1);
++                    if (!line) continue;
++                    const event = JSON.parse(line) as QaEvent;
++                    this.applyQaEvent(agentId, event);
++                    if (event.result) result = event.result;
++                }
++            }
++        } catch (e: any) {
++            this.applyQaEvent(agentId, {
++                status: 'blocked',
++                activity: 'Bridge unavailable. Start it with: npm run office:bridge',
++            });
++        }
++
++        const status = result?.status ?? 'blocked';
++        await this.memoryStore.setTaskStatus(taskId, status);
++        this.broadcast('task-update', { agentId, task: title, status });
++        state.currentTask = '';
++        if (result) {
++            state.reputation = result.metrics.reputation;
++            await this.memoryStore.saveMemory(agentId, {
++                content: `Task "${title}": ${result.summary}${result.reportPath ? ` (report ${result.reportPath})` : ''}`,
++                type: 'task_result',
++                timestamp: this.state.officeTime,
++                importance: 0.8,
++            }, this.sessionId);
++        }
++        this.broadcast('qa-metrics', await this.fetchQaMetrics());
++    }
++
++    async onJoin(client: Client, options: any) {
+         console.log(client.sessionId, "joined the office room!");
+         // Send existing tasks to newly joined client
+         this.memoryStore.getTasks().then(tasks => {
+@@ -749,6 +870,8 @@ export class OfficeRoom extends Room<OfficeState> {
+         });
+         client.send('relationship-update', this.buildRelationshipPayload());
+         client.send('layout-sync', { name: 'default', layout: this.currentLayout });
++        client.send('office-config', { readonly: READONLY });
++        client.send('qa-metrics', await this.fetchQaMetrics());
+     }
+ 
+     onLeave(client: Client, consented: boolean) {
+diff --git a/packages/ui/src/App.tsx b/packages/ui/src/App.tsx
+index 90dc888..3b7eca4 100644
+--- a/packages/ui/src/App.tsx
++++ b/packages/ui/src/App.tsx
+@@ -1,7 +1,6 @@
+ import React from 'react';
+ import { ChatPanel } from './components/ChatPanel';
+ import { TaskBoard } from './components/TaskBoard';
+-import { AgentInspector } from './components/AgentInspector';
+ import { LayoutEditor } from './components/LayoutEditor';
+ import { SystemLog } from './components/SystemLog';
+ import { ViralControlPanel } from './components/ViralControlPanel';
+@@ -19,7 +18,6 @@ export function App() {
+             </div>
+             <ChatPanel />
+             <TaskBoard />
+-            <AgentInspector agent={{ name: 'Alice', role: 'Engineer', status: 'Idle', currentTask: 'Write Scaffold' }} />
+             <LayoutEditor />
+             <SystemLog />
+             <ViralControlPanel />
+diff --git a/packages/ui/src/components/TaskBoard.tsx b/packages/ui/src/components/TaskBoard.tsx
+index e2b862c..4ce75e5 100644
+--- a/packages/ui/src/components/TaskBoard.tsx
++++ b/packages/ui/src/components/TaskBoard.tsx
+@@ -11,7 +11,9 @@ interface TaskItem {
+ export function TaskBoard() {
+     const [tasks, setTasks] = useState<TaskItem[]>([]);
+     const [newTask, setNewTask] = useState('');
+-    const [targetAgent, setTargetAgent] = useState('auto');
++    const [targetAgent, setTargetAgent] = useState('player-alpha');
++    const [readonly, setReadonly] = useState(false);
++    const [metrics, setMetrics] = useState<Record<string, { tasksCompleted: number; tasksBlocked: number; tokensUsed: number; reputation: number }>>({});
+ 
+     useEffect(() => {
+         const checkRoom = setInterval(() => {
+@@ -26,6 +28,8 @@ export function TaskBoard() {
+                         return [...prev, { id: Date.now(), title: data.task, assigned_to: data.agentId, status: data.status }];
+                     });
+                 });
++                room.onMessage('office-config', (cfg: any) => setReadonly(Boolean(cfg?.readonly)));
++                room.onMessage('qa-metrics', (m: any) => setMetrics(m || {}));
+                 room.onMessage('tasks-sync', (serverTasks: any[]) => {
+                     setTasks(serverTasks.map(t => ({
+                         id: t.id,
+@@ -45,7 +49,7 @@ export function TaskBoard() {
+         if (!newTask.trim()) return;
+         const room = getColyseusRoom();
+         if (room) {
+-            room.send('assign-task', { title: newTask, agentId: targetAgent === 'auto' ? undefined : targetAgent });
++            room.send('assign-task', { title: newTask, agentId: targetAgent });
+             setNewTask('');
+         }
+     };
+@@ -53,12 +57,14 @@ export function TaskBoard() {
+     const statusColor = (s: string) => {
+         if (s === 'completed') return '#00b894';
+         if (s === 'in_progress') return '#fdcb6e';
++        if (s === 'blocked') return '#d63031';
+         return '#dfe6e9';
+     };
+ 
+     const statusIcon = (s: string) => {
+         if (s === 'completed') return '✅';
+         if (s === 'in_progress') return '🔄';
++        if (s === 'blocked') return '⛔';
+         return '⏳';
+     };
+ 
+@@ -77,7 +83,7 @@ export function TaskBoard() {
+             </h3>
+ 
+             {/* Task Assignment Form */}
+-            <form onSubmit={handleSubmit} style={{ marginBottom: 10 }}>
++            {!readonly && <form onSubmit={handleSubmit} style={{ marginBottom: 10 }}>
+                 <input
+                     type="text"
+                     value={newTask}
+@@ -100,9 +106,10 @@ export function TaskBoard() {
+                             color: '#aaa', fontSize: '11px'
+                         }}
+                     >
+-                        <option value="auto">🤖 Auto-assign</option>
+-                        <option value="alice">Alice (Engineer)</option>
+-                        <option value="bob">Bob (PM)</option>
++                        <option value="player-alpha">Alpha (QA Player)</option>
++                        <option value="explorer">Explorer (QA Explorer)</option>
++                        <option value="qa-analyst">Analyst (QA Analyst)</option>
++                        <option value="design-critic">Critic (Design Critic)</option>
+                     </select>
+                     <button type="submit" style={{
+                         padding: '6px 14px', borderRadius: 6, border: 'none',
+@@ -112,7 +119,7 @@ export function TaskBoard() {
+                         Assign
+                     </button>
+                 </div>
+-            </form>
++            </form>}
+ 
+             {/* Task List */}
+             <div style={{ flex: 1, overflowY: 'auto', fontSize: '12px' }}>
+@@ -137,8 +144,15 @@ export function TaskBoard() {
+                 ))}
+             </div>
+ 
+-            <div style={{ marginTop: 8, fontSize: '10px', color: '#555', borderTop: '1px solid #333', paddingTop: 6 }}>
+-                🤖 Engine: Ollama Local • 💾 SQLite Persistence
++            <div style={{ marginTop: 8, fontSize: '10px', color: '#888', borderTop: '1px solid #333', paddingTop: 6 }}>
++                {Object.entries(metrics).map(([id, m]) => (
++                    <div key={id}>
++                        {id}: ✅ {m.tasksCompleted} · ⛔ {m.tasksBlocked} · {m.tokensUsed} tok · rep {m.reputation.toFixed(2)}
++                    </div>
++                ))}
++                <div style={{ color: '#555', marginTop: 4 }}>
++                    🤖 Engine: Ollama Local • 💾 SQLite Persistence{readonly ? ' • 👁 Read-only' : ''}
++                </div>
+             </div>
+         </div>
+     );
+diff --git a/packages/ui/src/game/Game.ts b/packages/ui/src/game/Game.ts
+index b2688da..c19166a 100644
+--- a/packages/ui/src/game/Game.ts
++++ b/packages/ui/src/game/Game.ts
+@@ -547,7 +547,7 @@ export class OfficeScene extends Phaser.Scene {
+ 
+                     let sprite;
+                     let charKey = 'char_0';
+-                    if (agent.name.includes('Bob')) charKey = 'char_1';
++                    if (agent.name.includes('Analyst') || agent.name.includes('Critic')) charKey = 'char_1';
+ 
+                     if (this.textures.exists(charKey)) {
+                         sprite = this.add.sprite(0, -8, charKey, 0);

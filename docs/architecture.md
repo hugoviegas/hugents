@@ -1,5 +1,9 @@
 # Architecture
 
+## Current base
+
+`packages/duel-agent-office` is the working base: a local, deterministic QA runner (two isolated Playwright sessions), a redacting event pipeline, a read-only observer with a loopback dashboard, and an optional agent office that only writes report text. The components below are the target split; code moves into them from this package as it stabilizes.
+
 ## Components
 
 - `core`: orchestrates runs, contracts, and execution state.
