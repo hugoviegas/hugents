@@ -1,0 +1,12 @@
+{
+  "projectId": "example-project",
+  "allowedTargetUrlPattern": "^https://qa-[a-z0-9-]+\\.example\\.test$",
+  "blockedTargets": ["prod", "www."],
+  "testAccountVariableNames": ["QA_ACCOUNT_A"],
+  "availableScenarios": ["scenario-one"],
+  "screens": [
+    { "id": "screen-one", "hidden": false },
+    { "id": "screen-hidden", "hidden": true }
+  ],
+  "forbiddenActions": ["delete account", "purchase", "sign out"]
+}

@@ -2,7 +2,7 @@ import type { Sanitizer, Store, Task } from "@hugents/core";
 import { ApprovalError, assertRunnable } from "./approval.js";
 import type { TestDraft } from "./contracts.js";
 import { createStageEmitter } from "./events.js";
-import type { GeneratorManifest } from "./manifest.js";
+import type { Manifest } from "@hugents/core";
 import type { DraftRepository } from "./pipeline.js";
 
 /** Approved draft -> task on the same serial queue as hand-written scenarios. Params are ids and a hash only. */
@@ -29,7 +29,7 @@ export interface RunDeps {
   store: Store;
   drafts: DraftRepository;
   sanitizer: Sanitizer;
-  manifest: GeneratorManifest;
+  manifest: Manifest;
   executor: SpecExecutor;
   now: () => string;
 }

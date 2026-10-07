@@ -1,7 +1,7 @@
 import ts from "typescript";
 import { DEFAULT_RULES } from "@hugents/core";
 import type { AllowedElement, ReasonCode, ValidationIssue, ValidatorResult } from "./contracts.js";
-import type { GeneratorManifest } from "./manifest.js";
+import type { Manifest } from "@hugents/core";
 
 /** The only module a generated spec may import from. It exports `test` (the seed fixture) and `expect`. */
 export const APPROVED_HELPER_MODULE = "hugents-seed";
@@ -86,7 +86,7 @@ export interface ValidateOptions {
  */
 export function validateSpec(
   spec: string,
-  manifest: Pick<GeneratorManifest, "forbiddenActions">,
+  manifest: Pick<Manifest, "forbiddenActions">,
   options: ValidateOptions = {},
 ): ValidatorResult {
   const issues: ValidationIssue[] = [];

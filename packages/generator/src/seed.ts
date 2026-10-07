@@ -1,4 +1,5 @@
-import { assertAllowedTarget, type GeneratorManifest } from "./manifest.js";
+import type { Manifest } from "@hugents/core";
+import { assertAllowedTarget } from "./manifest.js";
 
 /** The slice of a Playwright page the seed needs. Keeps this package free of a browser dependency. */
 export interface PageLike {
@@ -13,7 +14,7 @@ export class SeedError extends Error {
 }
 
 export interface SeedConfig<P extends PageLike> {
-  manifest: GeneratorManifest;
+  manifest: Manifest;
   /** Supplied by the run task, never by the generated spec or a model. Checked against the manifest. */
   targetUrl: string;
   /** Name of the environment variable holding the test account. Must be listed in the manifest. */

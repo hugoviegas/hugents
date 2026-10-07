@@ -1,66 +1,21 @@
-/**
- * The part of the project manifest the generator needs (docs/manifest.md). No manifest parser exists in the
- * repository yet, so this is a local, minimal shape. `screens` is new: the doc only lists `screensToHide`.
- */
-export interface GeneratorManifest {
-  projectId: string;
-  /** Strict allowlist of non-production targets, as a regular expression source anchored with ^ and $ (enforced by `createManifest`). */
-  allowedTargetUrlPattern: string;
-  /** Explicit blocked targets (case-insensitive substrings of the host). Always wins over the allowlist. */
-  blockedTargets: readonly string[];
-  /** Names of environment variables holding test accounts. Never values. */
-  testAccountVariableNames: readonly string[];
-  /** Screens a test may target. */
-  screens: readonly { id: string; hidden?: boolean }[];
-  /** Operations a generated test must never perform, as lower-case phrases (e.g. "delete account"). */
-  forbiddenActions: readonly string[];
-}
+import { parseManifest, type Manifest } from "@hugents/core";
 
 export class ManifestError extends Error {
-  constructor(readonly code: "unanchored-pattern" | "invalid-pattern" | "empty-allowlist") {
+  /** A fixed reason code from the core parser, with the field path. Never the offending value. */
+  constructor(readonly code: string, readonly path = "$") {
     super(code);
     this.name = "ManifestError";
   }
 }
 
-/** True when the source starts with ^, ends with an unescaped $ and has no top-level alternation. */
-function isAnchored(source: string): boolean {
-  if (!source.startsWith("^") || !source.endsWith("$")) return false;
-  let backslashes = 0;
-  for (let i = source.length - 2; i >= 0 && source[i] === "\\"; i--) backslashes++;
-  if (backslashes % 2 === 1) return false;
-  let depth = 0;
-  let inClass = false;
-  for (let i = 0; i < source.length; i++) {
-    const c = source[i];
-    if (c === "\\") i++;
-    else if (inClass) inClass = c !== "]";
-    else if (c === "[") inClass = true;
-    else if (c === "(") depth++;
-    else if (c === ")") depth--;
-    else if (c === "|" && depth === 0) return false;
+/** Validates untrusted input with the core parser. Throws a `ManifestError` with the first reason code. */
+export function createManifest(input: unknown): Manifest {
+  const result = parseManifest(input);
+  if (!result.ok) {
+    const first = result.issues[0]!;
+    throw new ManifestError(first.code, first.path);
   }
-  return true;
-}
-
-/**
- * Builds a manifest from untrusted input. An unanchored allowlist pattern would match a URL that merely contains an
- * allowed host, so it is refused here, once, instead of being trusted at every call site.
- */
-export function createManifest(input: GeneratorManifest): GeneratorManifest {
-  if (!isAnchored(input.allowedTargetUrlPattern)) throw new ManifestError("unanchored-pattern");
-  try {
-    new RegExp(input.allowedTargetUrlPattern);
-  } catch {
-    throw new ManifestError("invalid-pattern");
-  }
-  return Object.freeze({
-    ...input,
-    blockedTargets: [...input.blockedTargets],
-    testAccountVariableNames: [...input.testAccountVariableNames],
-    screens: input.screens.map((x) => ({ ...x })),
-    forbiddenActions: [...input.forbiddenActions],
-  });
+  return result.manifest;
 }
 
 export class TargetBlockedError extends Error {
@@ -71,7 +26,7 @@ export class TargetBlockedError extends Error {
 }
 
 /** Throws unless `url` is on the manifest allowlist and not blocked. Called before every navigation. */
-export function assertAllowedTarget(url: string, manifest: GeneratorManifest): URL {
+export function assertAllowedTarget(url: string, manifest: Manifest): URL {
   let parsed: URL;
   try {
     parsed = new URL(url);

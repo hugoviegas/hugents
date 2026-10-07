@@ -2,7 +2,7 @@ import type { Sanitizer, Store } from "@hugents/core";
 import { hashSpec } from "./approval.js";
 import type { ReasonCode, TestDraft, TestRequest } from "./contracts.js";
 import { createStageEmitter } from "./events.js";
-import type { GeneratorManifest } from "./manifest.js";
+import type { Manifest } from "@hugents/core";
 import { validateSpec } from "./validator.js";
 
 /** What a model may see about a screen: sanitized role and name pairs. No page text blocks, URLs or ids. */
@@ -29,7 +29,7 @@ export const ROOM_CODE_RULE = { name: "room-code", pattern: /\b(?:room|sala|c[o√
 export function buildExplorationInput(
   observation: ExplorationObservation,
   request: Pick<TestRequest, "screenId" | "goal">,
-  manifest: GeneratorManifest,
+  manifest: Manifest,
   sanitizer: Sanitizer,
 ): ExplorationInput | undefined {
   const screen = manifest.screens.find((s) => s.id === request.screenId);
@@ -105,7 +105,7 @@ export interface PipelineDeps {
   store: Store;
   drafts: DraftRepository;
   sanitizer: Sanitizer;
-  manifest: GeneratorManifest;
+  manifest: Manifest;
   /** Omit to use the deterministic skeleton. A configured provider that fails produces a rejected draft. */
   provider?: TestGenerationProvider;
   /** Restrict actions to the elements seen in the sanitized exploration input (validator first layer). */

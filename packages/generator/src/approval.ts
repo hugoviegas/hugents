@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import type { TestDraft, ValidatorResult } from "./contracts.js";
-import type { GeneratorManifest } from "./manifest.js";
+import type { Manifest } from "@hugents/core";
 import { validateSpec } from "./validator.js";
 
-const validateDraft = (draft: Pick<TestDraft, "spec" | "allowedElements">, spec: string, manifest: GeneratorManifest) =>
+const validateDraft = (draft: Pick<TestDraft, "spec" | "allowedElements">, spec: string, manifest: Manifest) =>
   validateSpec(spec, manifest, { allowedElements: draft.allowedElements });
 
 export function hashSpec(spec: string): string {
@@ -32,7 +32,7 @@ function isAdmin(actor: unknown): actor is AdminActor {
  * Identity must be verified at the admin API before this is called. It is exported from `./admin` only.
  *
  *  Revalidates, so a stale validator result can never be approved. */
-export function approveDraft(draft: TestDraft, actor: unknown, manifest: GeneratorManifest, now: string): TestDraft {
+export function approveDraft(draft: TestDraft, actor: unknown, manifest: Manifest, now: string): TestDraft {
   if (!isAdmin(actor)) throw new ApprovalError("not-admin");
   if (draft.status !== "draft") throw new ApprovalError("not-approvable");
   const hash = hashSpec(draft.spec);
@@ -42,7 +42,7 @@ export function approveDraft(draft: TestDraft, actor: unknown, manifest: Generat
 }
 
 /** Any edit revalidates and drops the approval. The draft goes back to `draft` (or `rejected`). */
-export function editDraft(draft: TestDraft, changes: { plan?: string; spec?: string }, manifest: GeneratorManifest): TestDraft {
+export function editDraft(draft: TestDraft, changes: { plan?: string; spec?: string }, manifest: Manifest): TestDraft {
   if (draft.status === "running") throw new ApprovalError("not-approvable");
   const spec = changes.spec ?? draft.spec;
   const validation: ValidatorResult = validateDraft(draft, spec, manifest);
@@ -60,7 +60,7 @@ export function editDraft(draft: TestDraft, changes: { plan?: string; spec?: str
 }
 
 /** Gate before any execution: approved, approval bound to this exact content, and the spec still validates. */
-export function assertRunnable(draft: TestDraft, manifest: GeneratorManifest): void {
+export function assertRunnable(draft: TestDraft, manifest: Manifest): void {
   if (draft.status !== "approved" || !draft.approval) throw new ApprovalError("not-approved");
   const hash = hashSpec(draft.spec);
   if (hash !== draft.contentHash || hash !== draft.approval.contentHash) throw new ApprovalError("hash-mismatch");
