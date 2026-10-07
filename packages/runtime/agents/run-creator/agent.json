@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "run-creator",
+  "version": "1.0.0",
+  "identity": {
+    "name": "Builder",
+    "role": "Run Creator",
+    "description": "Generates and validates a Playwright spec draft for an approved run suggestion. Never approves or runs it."
+  },
+  "officeAgent": "explorer",
+  "model": {
+    "provider": "deterministic"
+  },
+  "prompt": {
+    "system": "prompts/system.md"
+  },
+  "skills": [
+    {
+      "id": "spec-rules",
+      "file": "skills/spec-rules.md"
+    }
+  ],
+  "entry": "run-creator.generate",
+  "tools": [
+    "run-creator.generate"
+  ],
+  "capabilities": [
+    "board:read",
+    "board:propose",
+    "board:transition",
+    "artifact:write"
+  ],
+  "input": "schemas/input.json",
+  "output": "schemas/output.json",
+  "limits": {
+    "timeoutMs": 60000,
+    "maxRetries": 0,
+    "maxConcurrency": 1,
+    "maxInputArtifacts": 0,
+    "maxOutputBytes": 4096,
+    "maxTokens": 0
+  },
+  "artifacts": {
+    "accepts": [],
+    "produces": [
+      "generated-spec"
+    ]
+  },
+  "boards": {
+    "produces": [
+      {
+        "board": "approved-runs",
+        "state": "draft-ready"
+      }
+    ],
+    "transitions": [
+      {
+        "board": "run-suggestions",
+        "from": "approved",
+        "to": "consumed"
+      }
+    ]
+  },
+  "approval": {
+    "outputRequiresHuman": true
+  },
+  "env": []
+}

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "issue-reviewer",
+  "version": "1.0.0",
+  "identity": {
+    "name": "Reviewer",
+    "role": "Issue Reviewer",
+    "description": "Writes a GitHub issue draft for a finished run with artifact references only. Never files it."
+  },
+  "officeAgent": "qa-analyst",
+  "model": {
+    "provider": "deterministic"
+  },
+  "prompt": {
+    "system": "prompts/system.md"
+  },
+  "skills": [
+    {
+      "id": "issue-format",
+      "file": "skills/issue-format.md"
+    }
+  ],
+  "entry": "issue-reviewer.draft",
+  "tools": [
+    "issue-reviewer.draft"
+  ],
+  "capabilities": [
+    "board:read",
+    "board:propose",
+    "artifact:read",
+    "artifact:write"
+  ],
+  "input": "schemas/input.json",
+  "output": "schemas/output.json",
+  "limits": {
+    "timeoutMs": 15000,
+    "maxRetries": 1,
+    "maxConcurrency": 1,
+    "maxInputArtifacts": 0,
+    "maxOutputBytes": 4096,
+    "maxTokens": 0
+  },
+  "artifacts": {
+    "accepts": [],
+    "produces": [
+      "issue-draft"
+    ]
+  },
+  "boards": {
+    "produces": [
+      {
+        "board": "issue-drafts",
+        "state": "draft"
+      }
+    ],
+    "transitions": []
+  },
+  "approval": {
+    "outputRequiresHuman": true
+  },
+  "env": []
+}
