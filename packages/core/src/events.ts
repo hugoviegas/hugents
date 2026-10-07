@@ -36,6 +36,7 @@ export const TOOLS = [
   "read-findings",
   "ai-provider",
   "review-screenshots",
+  "generate-test",
 ] as const;
 export type Tool = (typeof TOOLS)[number];
 

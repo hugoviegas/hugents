@@ -17,6 +17,7 @@ export const TASK_KINDS = [
   "observe-artifacts",
   "write-report",
   "review-screenshots",
+  "run-generated-test",
 ] as const;
 export type TaskKind = (typeof TASK_KINDS)[number];
 
