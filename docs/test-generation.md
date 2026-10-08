@@ -10,7 +10,7 @@ One agent reports a problem (for example "this screen is not fully exercised"). 
 4. **Validate.** `validateSpec` parses the spec with the TypeScript parser and walks the AST. It never executes it. Issues are reason codes and line numbers, never source text.
 5. **Approve.** `approveDraft` needs an admin actor, revalidates, and binds the approval to the SHA-256 of the spec. Any edit drops the approval and revalidates. `approveDraft` trusts its caller: it checks the shape of the actor, not who is behind it. Identity must be verified at the admin API (not built yet) before it is called. Approval and edit functions are exported only from `@hugents/generator/admin`, not from the package root that the pipeline, agents and providers import. That is a convention inside one process; the real gate is the admin API.
 6. **Queue.** An approved draft becomes a `run-generated-test` task (ids and hash only) on the same serial queue as hand-written scenarios.
-7. **Run.** Before running, the handler checks status, hash equality (task, draft, approval) and validates again. A mismatch blocks the task and nothing executes. The executor receives the spec text only. The spec reaches the page through the seed fixture, which checks the manifest allowlist before any navigation, so production is always blocked and a spec cannot set its own URL.
+7. **Run.** Before running, the handler checks status, hash equality (task, draft, approval) and validates again. A mismatch blocks the task and nothing executes. The executor (see below) receives the spec text only. The spec reaches the page through the seed fixture, which checks the manifest allowlist before any navigation, so production is always blocked and a spec cannot set its own URL.
 
 ## What the validator enforces
 
@@ -55,14 +55,52 @@ Each stage emits a core event with `tool: "generate-test"`. State is read from `
 
 Nothing is shown as `working` before execution starts; `running` is the only working stage.
 
-## Requirements for the spec executor (worker issue)
+## The restricted executor
 
-The executor is not built here. It must:
+`createPlaywrightExecutor(config)` (in `packages/generator/src/executor.ts`) is the `SpecExecutor` for `runDraftTask`. The worker builds one per run task: the target URL and the account variable name come from the task and the manifest, the spec text from the approved draft. The model output, plan and run options never reach it. `runSpec` is the same logic returning `{ passed, reasons, blockedRequests, tests }`.
 
-- enforce a per-test timeout and a maximum action count, and fail the run when either is exceeded (the validator cannot detect loops or long waits);
-- open the page only through `openSeededPage`, with the target taken from the run task, never from the spec;
-- receive the approved spec text only, and run it only after `assertRunnable` passes on the same content;
-- print counts and opaque ids only, and produce no traces, videos or raw screenshots.
+Order inside a run, each step failing with a reason code and nothing else:
+
+1. `validateSpec` again (second check next to `assertRunnable`; the `allowedElements` list is applied by `assertRunnable`, which has the draft).
+2. `assertAllowedTarget` on the task target (blocked targets win over the allowlist), then the account name against the manifest, then the credential is present. All before a browser exists.
+3. The spec is transpiled, written to a temporary directory and loaded in a `vm` context with no globals (no `process`, `require` except the seed module, `fetch`, timers or `console`; string code generation off). `import ... from "hugents-seed"` is the only module that resolves.
+4. A fresh browser context per run: no stored state, downloads off, no permissions, service workers blocked. The temporary directory and the browser are removed in a `finally`, after pass, fail, timeout and crash.
+5. Network: every request goes through `assertAllowedTarget`; others are aborted and counted (`network-blocked`). A blocked request is reported next to the result; it does not by itself fail a run.
+6. Tests run serially. Each gets a new page opened through `openSeededPage` (allowlist check, login adapter with the credential, read once) and the spec receives a wrapped `page`.
+
+### The `hugents-seed` module
+
+Exports `test` (`test`, `test.describe`, `test.step`, `test.beforeEach`) and `expect`. `test` only registers; the executor runs the tests. The `page` fixture exposes `getByRole`, `getByLabel`, `getByText` and `getByTestId` only. Locators expose the methods the validator allows. Any other property throws `api-not-allowed` instead of returning `undefined`, so a validator miss stops at runtime. `expect` supports the matchers the validator allows (locator matchers poll up to the assertion timeout, with `.not`). Failing matchers report `assertion-failed`, never the compared values.
+
+### Login adapter
+
+`LoginAdapter = (page, credential) => Promise<void>` is trusted, project-specific code. It must not return, log or store the credential. An error it throws is replaced by `login-failed` (its message is dropped). `placeholderLoginAdapter` is for fixtures only. No real selectors or accounts are committed.
+
+### Limits (`HarnessLimits`, all overridable by the worker, never by the spec)
+
+| Limit | Default | Code on breach |
+| --- | --- | --- |
+| per-test timeout | 30 s | `run-timeout` |
+| total run time | 120 s | `run-time-limit` (browser closed) |
+| actions plus assertions per test | 100 | `action-limit` |
+| pages open at once | 2 | `page-limit` (extra page closed) |
+| single assertion wait | 5 s | `assertion-failed` |
+
+Known limit: the spec runs in the executor's process. A synchronous infinite loop is interrupted only in the first synchronous segment of a test (`vm` timeout). The local worker should run the executor in a child process it can kill on its own deadline. Not built here.
+
+### Reason codes added
+
+`run-timeout`, `run-time-limit`, `action-limit`, `page-limit`, `assertion-failed`, `network-blocked`, `target-blocked`, `account-missing`, `account-not-in-manifest`, `login-failed`, `browser-failed`, `spec-error`, `no-tests`. They are stored on the draft (`reasons`) and shown in the final event label, for example `test draft: failed (assertion-failed)`. No page text, URL, screenshot or trace is stored.
+
+### Playwright
+
+Uses `playwright-core` 1.56.1 (pinned in `packages/generator/package.json`). The repository does not install browsers. On the machine that runs the worker, once:
+
+```
+npx playwright-core install chromium
+```
+
+The executor launches headless Chromium from `playwright-core`. Tests that need a browser use a local fixture page served on `localhost` and need that Chromium.
 
 ## Sanitizer side effects
 
@@ -74,4 +112,4 @@ Playwright's test agents (planner, generator, healer) and the `seed.spec.ts` see
 
 ## Not built yet
 
-See the pull request for the audit. In short: a real manifest parser, persistent draft storage, the worker that executes specs, the admin surface that calls `approveDraft`, a real model provider, and the Playwright wiring of the `hugents-seed` module.
+See the pull request for the audit. In short: the remote admin surface that calls `approveDraft` (the local runtime CLI and `approveRun` cover local use, see [agent-runtime.md](agent-runtime.md); drafts persist through its `DbDraftRepository`), a real model provider, and running the executor in a killable child process.

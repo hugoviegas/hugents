@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "types": ["node"],
+    "noEmit": true,
+    "paths": {
+      "@hugents/core": ["../core/src/index.ts"],
+      "@hugents/generator": ["../generator/src/index.ts"],
+      "@hugents/generator/admin": ["../generator/src/admin.ts"]
+    }
+  },
+  "include": ["src", "test"]
+}

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "test-planner",
+  "version": "1.0.0",
+  "identity": {
+    "name": "Planner",
+    "role": "Test Planner",
+    "description": "Proposes one run suggestion for an open problem and marks the problem triaged."
+  },
+  "model": {
+    "provider": "deterministic"
+  },
+  "prompt": {
+    "system": "prompts/system.md"
+  },
+  "skills": [
+    {
+      "id": "goal-writing",
+      "file": "skills/goal-writing.md"
+    }
+  ],
+  "entry": "test-planner.suggest",
+  "tools": [
+    "test-planner.suggest"
+  ],
+  "capabilities": [
+    "board:read",
+    "board:propose",
+    "board:transition"
+  ],
+  "input": "schemas/input.json",
+  "output": "schemas/output.json",
+  "limits": {
+    "timeoutMs": 15000,
+    "maxRetries": 1,
+    "maxConcurrency": 2,
+    "maxInputArtifacts": 0,
+    "maxOutputBytes": 4096,
+    "maxTokens": 0
+  },
+  "artifacts": {
+    "accepts": [],
+    "produces": []
+  },
+  "boards": {
+    "produces": [
+      {
+        "board": "run-suggestions",
+        "state": "proposed"
+      }
+    ],
+    "transitions": [
+      {
+        "board": "problems",
+        "from": "open",
+        "to": "triaged"
+      }
+    ]
+  },
+  "approval": {
+    "outputRequiresHuman": true
+  },
+  "env": []
+}

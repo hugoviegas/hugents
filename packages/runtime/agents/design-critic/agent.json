@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "design-critic",
+  "version": "1.0.0",
+  "identity": {
+    "name": "Critic",
+    "role": "Design Critic",
+    "description": "Turns design-critic findings and their screenshots into problem items for the problem board."
+  },
+  "officeAgent": "design-critic",
+  "model": {
+    "provider": "deterministic"
+  },
+  "prompt": {
+    "system": "prompts/system.md"
+  },
+  "skills": [
+    {
+      "id": "severity-scale",
+      "file": "skills/severity-scale.md"
+    },
+    {
+      "id": "screen-naming",
+      "file": "skills/screen-naming.md"
+    }
+  ],
+  "entry": "design-critic.review",
+  "tools": [
+    "design-critic.review"
+  ],
+  "capabilities": [
+    "artifact:read",
+    "board:propose"
+  ],
+  "input": "schemas/input.json",
+  "output": "schemas/output.json",
+  "limits": {
+    "timeoutMs": 30000,
+    "maxRetries": 1,
+    "maxConcurrency": 1,
+    "maxInputArtifacts": 8,
+    "maxOutputBytes": 16384,
+    "maxTokens": 40000
+  },
+  "artifacts": {
+    "accepts": [
+      "report",
+      "screenshot"
+    ],
+    "produces": []
+  },
+  "boards": {
+    "produces": [
+      {
+        "board": "problems",
+        "state": "open"
+      }
+    ],
+    "transitions": []
+  },
+  "approval": {
+    "outputRequiresHuman": true
+  },
+  "env": []
+}

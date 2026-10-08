@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@hugents/core": "0.0.0",
+    "playwright-core": "1.56.1",
     "typescript": "^5.6.0"
   },
   "devDependencies": {

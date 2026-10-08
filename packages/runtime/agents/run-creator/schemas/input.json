@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "suggestionItemId": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+    },
+    "elements": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "button",
+              "link",
+              "heading",
+              "tab",
+              "checkbox",
+              "textbox",
+              "dialog",
+              "main",
+              "navigation"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "role",
+          "name"
+        ]
+      }
+    }
+  },
+  "required": [
+    "suggestionItemId",
+    "elements"
+  ]
+}

@@ -371,6 +371,8 @@ ${MATERIAL_CSS}
 .report-item[aria-pressed="true"]{background:var(--panel-raised);border-color:var(--selected)}
 .report-item .frow{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
 .report-view{min-width:0;display:flex;flex-direction:column;gap:var(--space-2)}
+.rt summary{cursor:pointer;font:var(--type-body-strong);padding:4px 0}
+.rt details details{margin-left:var(--space-3)}
 .report-text{margin:0;padding:12px;background:var(--screen-bg);color:var(--screen-text);font:var(--type-log);white-space:pre-wrap;overflow-wrap:anywhere;max-height:520px;overflow:auto}
 .source-list{display:flex;flex-direction:column;gap:var(--space-3)}
 .source{display:flex;flex-direction:column;gap:var(--space-2);padding:12px;border:1px solid var(--panel-raised);border-radius:var(--radius-md)}
@@ -392,7 +394,7 @@ const $ = (id) => document.getElementById(id);
 const STATES = ${JSON.stringify(STATES)};
 const WORDS = { queued: "Queued", idle: "Idle", planning: "Planning", working: "Working", waiting: "Waiting", reviewing: "Reviewing", blocked: "Blocked", completed: "Completed", failed: "Failed", offline: "Offline", active: "Active" };
 const view = { data: null, raw: "", runId: null, agent: null, offline: false, lastStates: {}, drafts: {}, notes: {}, sending: false, edit: null,
-  tab: "overview", cfg: {}, reportsKey: null, flashTimer: null, conn: { kind: "github", label: "", path: "", repo: "", ref: "" }, github: {},
+  tab: "overview", cfg: {}, runtime: {}, rtOpen: {}, reportsKey: null, flashTimer: null, conn: { kind: "github", label: "", path: "", repo: "", ref: "" }, github: {},
   rep: { filters: { agent: "", severity: "", task: "", from: "", to: "" }, list: [], total: 0, open: null, text: "", built: false } };
 const PROPS = ${JSON.stringify(PROP_TYPES)};
 const GRID = ${JSON.stringify(GRID)};
@@ -774,6 +776,62 @@ function editForm(f) {
   return form;
 }
 
+// ---- Runtime packages (packages/runtime) of this agent: read only, refreshed while the editor is open.
+async function loadRuntime(id) {
+  const r = view.runtime[id];
+  if (r && (r.loading || Date.now() - r.at < 15000)) return;
+  view.runtime[id] = { ...(r || { packages: [] }), loading: true, at: Date.now() };
+  try {
+    const res = await fetch("/api/runtime-agents?" + new URLSearchParams({ agent: id }));
+    const data = await res.json();
+    view.runtime[id] = { at: Date.now(), enabled: data.enabled, packages: data.packages || [] };
+  } catch {
+    view.runtime[id] = { at: Date.now(), packages: [], error: true };
+  }
+  if (view.tab === "edit") render();
+}
+function fold(key, summary, ...kids) {
+  const d = el("details", { "data-key": key }, el("summary", null, summary), ...kids);
+  if (view.rtOpen[key]) d.open = true;
+  d.addEventListener("toggle", () => { view.rtOpen[key] = d.open; });
+  return d;
+}
+function runtimeBlock(f) {
+  loadRuntime(f.id);
+  const r = view.runtime[f.id];
+  const box = el("div", { class: "block rt" }, el("h3", { class: "label" }, "Runtime packages"));
+  if (!r || (r.loading && !r.packages.length && !r.enabled)) return box.append(el("p", { class: "empty" }, "Loading…")), box;
+  if (!r.packages.length) {
+    box.append(el("p", { class: "empty" }, r.error ? "The runtime data could not be read." : "No runtime package for " + f.name + " yet. Import one with: npm run agents -- import <folder>"));
+    return box;
+  }
+  for (const p of r.packages) {
+    const k = "rt-" + p.id;
+    const list = (xs) => xs.length ? xs.join(", ") : "none";
+    const facts = el("dl", { class: "facts" },
+      el("dt", null, "Versions"), el("dd", null, p.versions.join(", ") + " (newest runs)"),
+      el("dt", null, "Content hash"), el("dd", { class: "mono" }, p.contentHash),
+      el("dt", null, "Model"), el("dd", null, p.model || "none"),
+      el("dt", null, "Tools"), el("dd", { class: "mono" }, list(p.tools)),
+      el("dt", null, "Capabilities"), el("dd", { class: "mono" }, list(p.capabilities)),
+      el("dt", null, "Produces"), el("dd", { class: "mono" }, list(p.boards.produces)),
+      el("dt", null, "Moves"), el("dd", { class: "mono" }, list(p.boards.transitions)),
+      el("dt", null, "Limits"), el("dd", { class: "mono" }, Object.entries(p.limits).map(([a, b]) => a + " " + b).join(", ")));
+    const tasks = p.tasks.length ? el("ul", { class: "tasks" }, ...p.tasks.map((t) => el("li", null,
+      el("span", { class: "frow" }, el("span", { class: "label" }, t.state), el("span", { class: "mono" }, "v" + t.version), el("span", { class: "ts" }, fmtTime(t.createdAt))),
+      el("span", { class: "sum" }, t.summary || t.reason || ""),
+      ...t.items.map((i) => el("span", { class: "mono" }, i.board + " · " + i.state + " · " + i.title)))))
+      : el("p", { class: "empty" }, "No task yet.");
+    box.append(fold(k, p.name + " · " + p.role + " · " + p.id + "@" + p.version,
+      el("p", { class: "activity" }, p.description), facts,
+      fold(k + "-prompt", "System prompt", el("pre", { class: "report-text" }, p.prompt)),
+      ...p.skills.map((s) => fold(k + "-skill-" + s.id, "Skill: " + s.id, el("pre", { class: "report-text" }, s.text))),
+      fold(k + "-tasks", "Recent tasks (" + p.tasks.length + ")", tasks)));
+  }
+  box.append(el("span", { class: "hint" }, "Read only. To change a package, edit its folder, raise its version and run: npm run agents -- import <folder>. Old tasks keep the version they ran with."));
+  return box;
+}
+
 async function runCommand(f, cmd) {
   view.sending = true;
   view.notes[f.id] = { text: "Sending…" };
@@ -843,7 +901,7 @@ function renderDetail(run, facts) {
     return b;
   };
   const tabs = el("div", { class: "tabs", role: "group", "aria-label": "Agent view" }, tab("overview", "Overview"), tab("edit", "Edit agent"));
-  if (view.tab === "edit") { $("detail").replaceChildren(head, tabs, editForm(f)); return; }
+  if (view.tab === "edit") { $("detail").replaceChildren(head, tabs, editForm(f), runtimeBlock(f)); return; }
   const custom = assignForm(f);
   custom.querySelector("label").textContent = "Custom task";
   const parts = [head, tabs, current, commandsBlock(f), custom, el("div", { class: "block" }, el("h3", { class: "label" }, "Event log"), log), history];

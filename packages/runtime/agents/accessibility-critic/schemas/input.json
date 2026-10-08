@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "focus": {
+      "type": "string",
+      "maxLength": 200
+    }
+  },
+  "required": []
+}

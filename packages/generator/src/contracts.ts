@@ -21,6 +21,20 @@ export const REASON_CODES = [
   "provider-malformed",
   "screen-hidden",
   "screen-unknown",
+  // Runtime (executor) codes.
+  "run-timeout",
+  "run-time-limit",
+  "action-limit",
+  "page-limit",
+  "assertion-failed",
+  "network-blocked",
+  "target-blocked",
+  "account-missing",
+  "account-not-in-manifest",
+  "login-failed",
+  "browser-failed",
+  "spec-error",
+  "no-tests",
 ] as const;
 export type ReasonCode = (typeof REASON_CODES)[number];
 

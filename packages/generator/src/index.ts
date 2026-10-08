@@ -6,3 +6,5 @@ export { assertRunnable, hashSpec, ApprovalError } from "./approval.js";
 export * from "./events.js";
 export * from "./pipeline.js";
 export * from "./queue.js";
+export * from "./harness.js";
+export * from "./executor.js";
